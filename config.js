@@ -7,7 +7,7 @@ window.PORTAL_CONFIG = {
 
   /* CHANGE 1: the address where this site will live (GitHub Pages link).
      The QR code opens  <siteUrl>verify.html . Keep the trailing slash. */
-  siteUrl: "https://YOUR-USERNAME.github.io/YOUR-REPO/",
+  siteUrl: "https://smartkali.github.io/mark-gen/",
 
   /* Optional: GitHub repo used for one-click publishing. Leave empty to
      auto-detect from siteUrl (works for username.github.io/repo). */
@@ -28,7 +28,7 @@ window.PORTAL_CONFIG = {
     /* Two lines printed under the university name on every marksheet (HTML allowed). */
     headerLines: "Established under State Act No. 12 of 2005 · Recognised by UGC · NAAC Accredited 'A' Grade<br>University Campus, Knowledge Park, Sample City - 226 010, State · Tel: +91 00000 00000 · exam@sampleuniversity.edu",
     /* CHANGE 3 (optional): logo file next to index.html, e.g. "logo.png" (square, under 100 KB). */
-    logo: "/logo.png"
+    logo: "logo.png"
   },
 
   /* CHANGE 4: marksheet serial number prefix, e.g. SU-MS-2026-000001 */
