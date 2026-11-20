@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Verify marksheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif}
+.lgo{border-radius:50%;display:grid;place-items:center;overflow:hidden;flex:none;font:700 20px Playfair Display,serif}.lgo img{width:100%;height:100%;object-fit:cover}
+.err{color:#c62828;font-size:12px}.sub{margin:0;opacity:.75;font-size:13px}
+/* verification (public, always light) */
+.vw{min-height:100dvh;background:#f3f6fb;color:#1a2233;display:flex;flex-direction:column;font-family:Inter,Arial,sans-serif}
+.vhd{background:linear-gradient(90deg,#10285a,#1f3a7a);color:#fff;position:sticky;top:0;z-index:4;box-shadow:0 2px 10px #0003}
+.vhd .vin{max-width:900px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.vhd .lgo{width:42px;height:42px;background:#fff2}
+.vhd .nm b{display:block;font-size:15px}.vhd .nm small{opacity:.8;font-size:11px}.vhd nav{margin-left:auto;display:flex;gap:2px;flex-wrap:wrap}
+.vhd nav a{color:#fff;text-decoration:none;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:600;opacity:.92}.vhd nav a:hover{background:#fff2}
+.vmain{flex:1;max-width:900px;width:100%;margin:0 auto;padding:18px 16px 28px;display:grid;gap:14px;box-sizing:border-box;align-content:start}
+.vhero{border-radius:16px;padding:24px 18px;text-align:center;background:#fff;border:1px solid #0001;box-shadow:0 4px 18px #0001;border-top:6px solid var(--sc)}
+.vbadge{width:88px;height:88px;margin:0 auto 10px;border-radius:50%;display:grid;place-items:center;background:var(--sc)}
+.vhero h1{margin:6px 0 4px;font:800 24px Inter;letter-spacing:.8px;color:var(--sc)}.vhero p{margin:6px auto 0;max-width:540px;font-size:14px;color:#445}
+.vbtn{display:inline-block;margin-top:12px;background:#1f3a7a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px;border:0;cursor:pointer}
+.vcard{background:#fff;border:1px solid #0001;border-radius:14px;padding:16px;box-shadow:0 2px 10px #0001}.vcard h2{margin:0 0 8px;font:700 12px Inter;color:#1f3a7a;text-transform:uppercase;letter-spacing:.7px}
+.vrow{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #0001;font-size:14px}.vrow:last-child{border:0}.vrow span{color:#667}.vrow b{text-align:right}
+.vwarn{background:#fff8e6;border:1px solid #f0d28a;border-radius:14px;padding:14px 16px;font-size:13px;color:#5a4300}.vwarn b{display:block;margin-bottom:4px}.vwarn ul{margin:4px 0 0;padding-left:18px;display:grid;gap:5px}
+.vbad{background:#fdeaea;border-color:#f0a8a8;color:#7a1111}
+.vcon{display:grid;gap:10px;font-size:14px}.vcon div{display:flex;gap:10px;align-items:flex-start}.vcon i{font-style:normal;width:22px;text-align:center}.vcon a{color:#1f3a7a}
+.vmeta{font-size:11px;color:#778;text-align:center}
+.vft{background:#10285a;color:#cfd8ee;font-size:12px;padding:20px 16px;text-align:center;display:grid;gap:6px}.vft a{color:#fff}
+.vland ol{margin:6px 0 0;padding-left:20px;display:grid;gap:6px;font-size:14px}
+.vw textarea{background:#fff;color:#1a2233}
+
+.vhd .vin{max-width:900px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.vw textarea{width:100%;padding:11px;border:1px solid #8886;border-radius:10px;font:inherit}
+.pvbar{background:#fff3c4;color:#4a3b00;padding:10px 14px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.pvbar button{border:1px solid #c9ae4a;background:#fff;border-radius:8px;padding:6px 10px;font:600 12px Inter,Arial;cursor:pointer;margin:2px}.pvbar button.on{background:#4a3b00;color:#fff}
+@media print{.pvbar,.vhd nav{display:none}}
+</style>
+<script src="config.js"></script><script src="site-data.js"></script>
+</head><body><div class="vw" id="app"></div>
+<script>
+const CFG=window.PORTAL_CONFIG||{},CU=CFG.university||{},SITE=Object.assign({keys:[]},window.SITE_DATA||{});
+const $=id=>document.getElementById(id);
+const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const te=s=>new TextEncoder().encode(s),tdc=b=>new TextDecoder().decode(b);
+const unb=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0))};
+const EC={name:'ECDSA',namedCurve:'P-256'},SG={name:'ECDSA',hash:'SHA-256'};
+const LS=k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}};
+const UN=()=>CU.name||'University';
+const logoHtml=()=>CU.logo?`<img src="${esc(CU.logo)}" alt="">`:esc((UN()||'U')[0]);
+const gr=p=>p>=90?['O',10]:p>=80?['A+',9]:p>=70?['A',8]:p>=60?['B+',7]:p>=50?['B',6]:p>=40?['C',5]:['F',0];
+const calc=c=>{let mx=0,ob=0,cr=0,pt=0;const rows=c.m.map(s=>{const M=s[3]+s[4],O=s[5]+s[6],g=gr(O/M*100);mx+=M;ob+=O;cr+=s[7];pt+=g[1]*s[7];return{g:g[0]}});const sg=pt/cr;let TM=mx,TO=ob,TC=cr,WW=sg*cr;c.h.forEach(p=>{TM+=p[1];TO+=p[2];TC+=p[3];WW+=p[3]*p[4]});const pc=TO/TM*100;return{cg:WW/TC,pc,div:pc>=75?'First Division with Distinction':pc>=60?'First Division':pc>=50?'Second Division':'Third Division',fail:rows.some(r=>r.g=='F')}};
+const payloadOf=D=>{const S=D.student,k=calc({m:D.subjects,h:D.previous});return{v:3,t:D.tpl||'BCA',s:[S.name,S.roll,S.enroll,D.exam.programme,D.exam.semester,D.exam.session],x:[k.fail?'FAIL':'PASS',k.cg.toFixed(2),k.pc.toFixed(2),k.div],i:[D.issue.serial,D.issue.date,D.issue.place]}};
+const HASH=()=>window.__VLINK!==undefined?window.__VLINK:location.hash;
+const parse=h=>{const m=/id=([a-z0-9]+)&k=([A-Za-z0-9_-]+)&r=(\d+)/.exec(h||'');return m?{id:m[1],k:m[2],r:+m[3]}:null};
+const vlink=(h,t,x)=>h?`<a href="${esc(h)}" ${x===undefined?'target="_blank" rel="noopener"':x}>${t}</a>`:'';
+function vshell(inner){const nav=[CU.website?vlink(CU.website,'Home'):'','<a href="#" data-vn="again">Verify another</a>','<a href="#" data-vn="contact">Contact</a>',CU.officialPortal?vlink(CU.officialPortal,'Official portal ↗'):''].join('');
+ const ft=[CU.website?vlink(CU.website,'Website'):'',CU.officialPortal?vlink(CU.officialPortal,'Official portal'):'',CU.email?vlink('mailto:'+CU.email,esc(CU.email),''):''].filter(Boolean).join(' · ');
+ return `<header class="vhd"><div class="vin"><div class="lgo" style="width:42px;height:42px;background:#fff2">${logoHtml()}</div><div class="nm"><b>${esc(UN())}</b><small>${esc(CU.tagline||'Marksheet verification')}</small></div><nav>${nav}</nav></div></header><main class="vmain">${inner}</main><footer class="vft"><div>${ft}</div><div>This page decrypts a record using the key inside your QR link. No personal data is sent to or stored by this website.</div><div>© ${new Date().getFullYear()} ${esc(UN())} · <a href="index.html">Staff login</a></div></footer>`}
+function go(h){if(window.__VLINK!==undefined){window.__VLINK=h;run()}else if(location.hash==h)run();else location.hash=h}
+function wire(){document.querySelectorAll('[data-vn]').forEach(a=>a.onclick=e=>{e.preventDefault();const k=a.dataset.vn;if(k=='again')go('');else{const c=$('vcontact');if(c)c.scrollIntoView({behavior:'smooth'});else go('')}});window.scrollTo(0,0)}
+const vcontact=()=>{const L=[['📍',CU.address],['☎',CU.phone&&vlink('tel:'+CU.phone.replace(/\s/g,''),esc(CU.phone),'')],['✉',CU.email&&vlink('mailto:'+CU.email,esc(CU.email),'')],['🌐',CU.website&&vlink(CU.website,esc(CU.website))],['🕘',CU.officeHours]].filter(x=>x[1]);return `<section class="vcard" id="vcontact"><h2>Contact the university</h2><div class="vcon">${L.map(x=>`<div><i>${x[0]}</i><span>${/^</.test(x[1])?x[1]:esc(x[1])}</span></div>`).join('')}</div></section>`};
+function vpage(r){const c=r.c,st=r.st,ic={ck:'M8.5 12.2l2.4 2.4 4.6-5',ex:'M12 8v5M12 16.5v.1',x:'M9 9l6 6M15 9l-6 6'},
+ TT={ok:['#157f3d','VERIFIED','This marksheet is genuine and was issued by '+UN()+'.',ic.ck],unk:['#b26a00','NOT FULLY VERIFIED','The record was found, but its digital signature could not be checked on this website. Please confirm with the university.',ic.ex],bad:['#c62828','NOT VALID','This link does not match the stored university record, or the record has been altered. Do not rely on this marksheet.',ic.x],rev:['#c62828','REVOKED','This marksheet has been cancelled by the university and is no longer valid.',ic.x],sup:['#b26a00','OUTDATED VERSION','A newer version of this marksheet has been issued. Please check the latest QR code.',ic.ex],nf:['#c62828','NO RECORD FOUND','We could not find this marksheet in the university records. It may not be published yet, or the QR code / link may be wrong.',ic.x],loc:['#b26a00','NOT PUBLISHED YET','This record exists only on the issuing computer and has not been published, so the public cannot verify it yet.',ic.ex]}[st],
+ hero=`<section class="vhero" style="--sc:${TT[0]}"><div class="vbadge"><svg viewBox="0 0 24 24" width="54" height="54"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z" fill="#fff"/><path d="${TT[3]}" stroke="${TT[0]}" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h1>${TT[1]}</h1><p>${esc(TT[2])}</p>${st=='ok'&&CU.officialPortal?`<a class="vbtn" href="${esc(CU.officialPortal)}" target="_blank" rel="noopener">Also check on the official portal ↗</a>`:''}</section>`;
+ const bad=st=='bad'||st=='rev'||st=='nf',res=c?c.x[0]+(c.x[0]=='PASS'?' · '+c.x[3]:''):'',
+ sm=bad?'':`<section class="vcard"><h2>Marksheet summary</h2>${[['Candidate',c.s[0]],['Roll no.',c.s[1]],['Enrollment no.',c.s[2]],['Programme',c.s[3]],['Semester · Session',c.s[4]+' · '+c.s[5]],['Result',res],['CGPA · Percentage',c.x[1]+' · '+c.x[2]+'%'],['Serial no.',c.i[0]],['Issued on',c.i[1]+(c.i[2]?', '+c.i[2]:'')]].map(x=>`<div class="vrow"><span>${x[0]}</span><b>${esc(x[1])}</b></div>`).join('')}</section>`;
+ const wl=bad?['Do not accept this document as genuine until the university confirms it.','Try scanning the QR code again. If the problem continues, contact the university with the details below.','Keep a copy of this page and the document for reference.']:['Match the name, roll number and serial number above with the printed marksheet.','This page confirms authenticity only. Subject-wise marks are not shown here; refer to the original marksheet.','If any detail differs, treat the document as suspicious and contact the university.'].concat(CU.officialPortal?['For official confirmation, verify through the university\'s own portal: '+CU.officialPortal]:[]);
+ const warn=`<section class="vwarn ${bad?'vbad':''}"><b>${bad?'Important':'Please note'}</b><ul>${wl.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`;
+ return vshell(hero+sm+warn+vcontact()+`<div class="vmeta">Checked on ${esc(new Date().toLocaleString())}${c?' · signing key '+esc(c.k)+' · version '+c.r:''}</div>`)}
+function land(msg){$('app').innerHTML=vshell(`<section class="vhero" style="--sc:#1f3a7a"><h1>Verify a marksheet</h1><p>Check whether a marksheet issued by ${esc(UN())} is genuine.</p></section><section class="vcard vland"><h2>How it works</h2><ol><li>Scan the QR code printed on the marksheet with your phone camera.</li><li>This page opens automatically and looks up the university record.</li><li>Match the details with the printed marksheet.</li></ol></section><section class="vcard"><h2>Or paste the verification link</h2><textarea id="vt" rows="3" placeholder="https://…/verify.html#id=…"></textarea><div style="margin-top:8px"><button class="vbtn" id="vg" style="margin:0">Verify</button></div>${msg?`<div class="err" style="margin-top:8px">${esc(msg)}</div>`:''}</section>`+vcontact());wire();$('vg').onclick=()=>{const t=$('vt').value,i=t.indexOf('#');go(i>=0?t.slice(i):'#'+t.trim())}}
+async function load(p){const f=window.PORTAL_FETCH||((u,o)=>fetch(u,o));let res=null;try{res=await f('data/'+p.id+'.json',{cache:'no-store'})}catch(e){}
+ if(!res||!res.ok){const rec=(LS('mp_reg')||[]).find(x=>x.vid==p.id);if(rec&&rec.data){const c=payloadOf(rec.data);c.k=(LS('mp_key')||{}).kid||'local';c.r=rec.rev;return{c,st:'loc'}}return{st:'nf'}}
+ let j,o,c;try{j=JSON.parse(await res.text());const ak=await crypto.subtle.importKey('raw',unb(p.k),'AES-GCM',false,['decrypt']);o=JSON.parse(tdc(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb(j.iv)},ak,unb(j.ct))));c=JSON.parse(o.p)}catch(e){return{st:'bad'}}
+ const k=SITE.keys.find(x=>x.kid==o.k);let st='unk';if(k){try{const pk=await crypto.subtle.importKey('jwk',k.jwk,EC,false,['verify']);st=await crypto.subtle.verify(SG,pk,unb(o.g),te(o.p))?'ok':'bad'}catch(e){st='bad'}}
+ if(st=='bad')return{st};if(c.st=='revoked')return{c,st:'rev'};if(c.r>p.r)return{c,st:'sup'};return{c,st}}
+function sample(){let c=null;try{c=payloadOf(LS('mp_work'))}catch(e){}if(!c||!c.s[0])c={v:3,t:'BCA',s:['AARAV KUMAR VERMA','22SU-BCA-01847','SUT/2022/BCA/0412','BACHELOR OF COMPUTER APPLICATIONS (BCA)','SEMESTER VI','SEMESTER EXAMINATION, JUNE 2025'],x:['PASS','8.16','81.00','First Division with Distinction'],i:['SU-MS-2026-000001','15 July 2025','Sample City']};c.k=(LS('mp_key')||{}).kid||'DEMO-0000';c.r=1;return c}
+function preview(st){const bar=`<div class="pvbar"><b>DESIGN PREVIEW · sample data</b><div>${[['ok','Verified'],['unk','Not fully verified'],['bad','Not valid'],['rev','Revoked'],['sup','Outdated'],['nf','No record'],['loc','Not published']].map(x=>`<button data-pv="${x[0]}" class="${x[0]==st?'on':''}">${x[1]}</button>`).join('')}<button data-pv="back">← Back to portal</button></div></div>`;
+ $('app').innerHTML=bar+vpage({c:sample(),st});wire();document.querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>{if(b.dataset.pv=='back'){if(window.parent!==window&&parent.closePreviewFrame)parent.closePreviewFrame();else location.href='index.html'}else preview(b.dataset.pv)})}
+async function run(){const h=HASH();let m=/^#preview=(\w+)/.exec(h);if(m){preview(m[1]);return}
+ const p=parse(h);if(!p){land();return}
+ $('app').innerHTML=vshell('<section class="vhero" style="--sc:#556"><h1>Checking…</h1><p>Looking up the university record.</p></section>');wire();
+ try{if(!(window.crypto&&crypto.subtle))throw new Error('this browser cannot verify (https needed)');$('app').innerHTML=vpage(await load(p));wire()}catch(e){land('Could not verify this link ('+e.message+')')}}
+addEventListener('hashchange',()=>{if(window.__VLINK===undefined)run()});run();
+</script></body></html>

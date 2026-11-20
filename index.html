@@ -1,0 +1,2885 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marksheet Portal</title><script src="config.js"></script><script src="site-data.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+<script>
+//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+
+</script>
+<style>
+:root{--bg:#e9ecf1;--bar:#fff;--ink:#1a2233;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14171d;--bar:#1f242d;--ink:#e8ebf0}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bar);z-index:10}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bar);display:flex;align-items:center;gap:8px;padding:10px 14px;box-shadow:0 1px 6px #0003}
+.bar b{margin-right:auto}.bar button{border:0;background:#1f3a7a;color:#fff;padding:7px 12px;border-radius:8px;cursor:pointer;font:inherit}
+.wrap{overflow-x:auto;padding:16px}
+.page{--n:#1f3a7a;--g:#b8912a;--tt:#7a5c00;--pb:#fffdf6;--ink:#1237b8;width:210mm;height:297mm;margin:0 auto;position:relative;overflow:hidden;background:var(--pb);color:#1a2233;box-shadow:0 4px 20px #0004;font-size:7.6pt}
+.page[data-theme=mca]{--n:#0b5d4b;--g:#c0762b;--tt:#7a3f0a;--pb:#f8fcf9}
+.ring{position:absolute;inset:4mm;background:repeating-linear-gradient(45deg,var(--n) 0 .9mm,var(--g) .9mm 1.8mm),repeating-linear-gradient(-45deg,transparent 0 .9mm,#fff6 .9mm 1.8mm);background-blend-mode:multiply}
+.ring2{position:absolute;inset:8.2mm;background:var(--pb)}
+.ln1{position:absolute;inset:8.2mm;border:.5mm solid var(--n);box-sizing:border-box}
+.ln2{position:absolute;inset:9.1mm;border:.4mm solid var(--g);box-sizing:border-box}
+.cor{position:absolute;width:11mm;height:11mm;border-radius:50%;background:radial-gradient(circle,var(--g) 0 1.2mm,var(--pb) 1.3mm 2mm,var(--n) 2.1mm 3.2mm,var(--pb) 3.3mm 3.8mm,var(--g) 3.9mm 5mm,transparent 5.1mm)}
+.guil{position:absolute;inset:9.5mm;opacity:.1;background:repeating-radial-gradient(circle at 25% 30%,var(--n) 0 .25mm,transparent .25mm 1.6mm),repeating-radial-gradient(circle at 78% 70%,var(--g) 0 .25mm,transparent .25mm 1.6mm)}
+.wm{position:absolute;inset:0;width:100%;height:100%;color:var(--n);pointer-events:none}
+.big{position:absolute;left:50%;top:51%;width:118mm;height:118mm;transform:translate(-50%,-50%);color:var(--n);pointer-events:none}
+.bgtxt{position:absolute;inset:11mm;font:4.2pt/1.5 Inter;color:var(--n);opacity:.1;overflow:hidden;word-break:break-word;text-align:justify}
+.vt{position:absolute;top:12mm;bottom:12mm;width:2.4mm;writing-mode:vertical-rl;text-align:center;font:600 5pt/2.4mm Inter,sans-serif;letter-spacing:2.2pt;color:var(--n);opacity:.55;white-space:nowrap;overflow:hidden}
+.in{position:absolute;inset:11.5mm 12mm 10mm;display:flex;flex-direction:column;gap:1.6mm}
+.logo{width:20mm;height:20mm;border-radius:50%;background:var(--n);color:#fff;display:grid;place-items:center;font:700 19pt Playfair Display,serif;border:1mm double var(--g);flex:none;overflow:hidden}.logo img{width:100%;height:100%;object-fit:cover}
+h1{font:700 17pt Playfair Display,serif;color:var(--n);margin:0;letter-spacing:.4pt}
+.ttl{font:700 11pt Playfair Display,serif;letter-spacing:2.5pt;color:var(--tt);text-align:center;border-top:.3mm solid var(--g);border-bottom:.3mm solid var(--g);padding:1mm 0;background:color-mix(in srgb,var(--g) 8%,transparent)}
+.photo{width:25mm;height:31mm;border:.4mm solid #333;flex:none;overflow:hidden;background:#d9dee8}.photo svg,.photo img{width:100%;height:100%;display:block;object-fit:cover}
+.grid{display:grid;grid-template-columns:1fr 1fr;border:.3mm solid var(--n);background:#fffc}
+.grid div{padding:.9mm 2mm;border-bottom:.2mm solid #b9bfd0}.grid div:nth-child(odd){border-right:.2mm solid #b9bfd0}.grid b{color:var(--n)}
+table{border-collapse:collapse;width:100%;background:#fffc}
+th{background:var(--n);color:#fff;font-size:6.6pt;padding:1mm .8mm;border:.2mm solid #fff6;text-align:center}
+td{border:.2mm solid #aab;padding:.8mm 1.2mm;text-align:center;font-size:7.4pt}td.l{text-align:left}
+tr.t td{font-weight:700;background:color-mix(in srgb,var(--n) 8%,transparent)}
+h4{margin:0;font:700 7.6pt Inter;letter-spacing:1pt;color:var(--n);text-transform:uppercase}
+.res{display:grid;grid-template-columns:repeat(5,1fr);border:.4mm solid var(--n);text-align:center;background:color-mix(in srgb,var(--n) 6%,transparent)}
+.res div{padding:1.2mm;border-right:.2mm solid #aab}.res div:last-child{border:0}.res small{display:block;font-size:6pt;color:#555;text-transform:uppercase}.res b{font-size:10pt;color:var(--n)}
+.two{display:grid;grid-template-columns:1.05fr 1fr;gap:2.5mm}
+ol{margin:.5mm 0 0;padding-left:3.5mm;font-size:6.3pt;line-height:1.35}
+.qr{background:#fff;padding:1mm;border:.3mm solid #333;display:inline-block;line-height:0}
+.bar39{height:8mm;width:42mm;background:repeating-linear-gradient(90deg,#000 0 .3mm,#fff .3mm .7mm,#000 .7mm 1.5mm,#fff 1.5mm 1.8mm,#000 1.8mm 2.1mm,#fff 2.1mm 2.9mm)}
+/* rubber seal */
+.sgv{width:42mm;display:block}
+.spec{position:absolute;right:16mm;top:128mm;width:66mm;transform:rotate(-8deg);opacity:.86;z-index:4;pointer-events:none;display:none}
+/* blue signatures + stamps */
+.sgs{display:flex;gap:10mm}
+.sg{position:relative;width:42mm;text-align:center;font-size:6.8pt;color:var(--ink)}
+.sig{font:21pt 'Great Vibes',cursive;border-bottom:.3mm solid var(--ink);line-height:1.1;height:9mm;color:var(--ink);display:flex;align-items:flex-end;justify-content:center}.sig img{max-height:9mm}
+.sg b{display:block;margin-top:.6mm}.sg i{display:block;font-style:normal;font-size:6pt}
+
+.micro{font:3.6pt/1 Inter;color:#444;overflow:hidden;white-space:nowrap;letter-spacing:.2pt}
+.app{display:grid;grid-template-columns:390px 1fr;height:calc(100dvh - var(--bh,54px))}
+.app .wrap{overflow:auto}
+.fm{overflow:auto;padding:8px 10px 40px;background:var(--bar);border-right:1px solid #8883;font-size:13px}
+.fm details{border:1px solid #8884;border-radius:8px;margin:6px 0;padding:0 8px}
+.fm summary{cursor:pointer;font-weight:700;padding:8px 0}
+.fm label{display:block;font-size:11px;opacity:.9;margin:5px 0}
+.fm input,.fm textarea{width:100%;box-sizing:border-box;padding:6px 7px;margin-top:2px;border:1px solid #8886;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:13px}
+.fm .card{display:grid;gap:4px;border:1px dashed #8886;border-radius:8px;padding:6px;margin:6px 0}
+.fm .sub{grid-template-columns:repeat(4,1fr)}.fm .sub label:nth-child(2){grid-column:span 3}.fm .sub button{grid-column:span 2}
+.fm .prev{grid-template-columns:repeat(3,1fr)}
+.fm button{border:1px solid #8886;background:none;color:inherit;border-radius:6px;padding:6px 9px;cursor:pointer;font:inherit;font-size:12px}
+.fm .pri{background:#1f3a7a;color:#fff;border:0}
+.fm small{display:block;opacity:.8;margin-top:2px}
+.jp{position:fixed;inset:0;z-index:50;background:#0008;display:none;align-items:center;justify-content:center;padding:12px}.jp.on{display:flex}.jp .bx{background:var(--bar);color:var(--ink);max-width:560px;width:100%;max-height:90dvh;overflow:auto;border-radius:12px;padding:14px;box-shadow:0 8px 40px #000a;font-size:13px}.jp textarea{width:100%;height:240px;box-sizing:border-box;font:11px/1.4 monospace;background:transparent;color:inherit;border:1px solid #8886;border-radius:8px;padding:8px;margin-top:6px}.jp button{border:1px solid #8886;background:none;color:inherit;border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit}.jp .pri{background:#1f3a7a;color:#fff;border:0}.jp small{display:block;opacity:.8;margin-top:3px}.fm select{width:100%;padding:6px;margin-top:2px;border:1px solid #8886;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:13px}.fm select option{background:var(--bar);color:var(--ink)}
+.tab{display:none}
+@media(max-width:900px){.app{grid-template-columns:1fr}.tab{display:inline-block}.app.f .wrap,.app.p .fm{display:none}}
+[hidden]{display:none!important}
+:root{--ac:#1f3a7a;--ok:#157f3d;--wn:#b26a00;--er:#c62828}
+.lgo{border-radius:50%;display:grid;place-items:center;overflow:hidden;flex:none;font:700 20px Playfair Display,serif}.lgo img{width:100%;height:100%;object-fit:cover}
+/* login */
+.gate{min-height:100dvh;display:grid;grid-template-columns:minmax(300px,44%) 1fr;background:var(--bg)}
+.lg-side{background:linear-gradient(155deg,#10285a,#1f3a7a 55%,#2a6a8f);color:#fff;padding:40px 36px;display:flex;flex-direction:column;justify-content:space-between;gap:20px}
+.lg-side .lgo{width:56px;height:56px;background:#fff2;border:2px solid #fff6}
+.lg-side h1{font:700 26px/1.2 Playfair Display,serif;margin:18px 0 6px}.lg-side p{opacity:.85;margin:0;font-size:14px}
+.lg-side ul{list-style:none;padding:0;margin:26px 0 0;display:grid;gap:12px;font-size:14px}.lg-side li{display:flex;gap:10px;align-items:center}.lg-side li i{font-style:normal;background:#fff2;border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-size:12px;flex:none}
+.lg-main{display:grid;place-items:center;padding:24px}.lg-card{width:100%;max-width:380px;display:grid;gap:12px}
+.lg-card h2{margin:0;font:700 24px Playfair Display,serif}.sub{margin:0;opacity:.75;font-size:13px}
+.lg-card label,.pn label{display:block;font-size:12px;font-weight:600}
+.lg-card input,.pn input,.pn textarea,.vw textarea{width:100%;box-sizing:border-box;padding:11px;margin-top:4px;border:1px solid #8886;border-radius:10px;background:transparent;color:inherit;font:inherit;font-weight:400}
+.pw{position:relative}.pw button{position:absolute;right:4px;top:8px;border:0;background:none;cursor:pointer;font-size:16px;padding:6px}
+.pri{background:var(--ac)!important;color:#fff!important;border:0!important}
+.err{color:var(--er);font-size:12px;min-height:14px}.alt a{font-size:13px;color:inherit;opacity:.85}
+@media(max-width:780px){.gate{grid-template-columns:1fr;grid-template-rows:auto 1fr}.lg-side{padding:22px 20px;gap:6px}.lg-side ul,.lg-side small{display:none}.lg-side h1{font-size:22px;margin:12px 0 4px}.lg-main{align-items:start;padding:22px 20px}}
+/* admin header */
+#abar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:linear-gradient(90deg,#10285a,#1f3a7a);color:#fff;flex-wrap:wrap;box-shadow:0 2px 10px #0004}
+#abar .brand{display:flex;gap:10px;align-items:center;margin-right:auto}#abar .lgo{width:36px;height:36px;background:#fff2;font-size:16px}
+#abar b{margin:0;display:block;font-size:14px}#abar small{opacity:.75;font-size:11px}
+#abar nav{display:flex;gap:4px}#abar button{border:0;background:transparent;color:#fffd;padding:8px 12px;border-radius:8px;cursor:pointer;font:600 13px Inter}
+#abar .nav.on{background:#fff2;color:#fff}#abar .usr{display:flex;gap:6px}#abar #lo{background:#fff2}
+/* panels */
+.pn{max-width:1000px;margin:0 auto;padding:18px 16px 60px;display:grid;gap:14px}
+.cd{background:var(--bar);border:1px solid #8883;border-radius:14px;padding:16px}.cd h3{margin:0 0 8px;font:700 15px Inter}.cd h2{margin:0;font:700 20px Playfair Display,serif}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sp{flex:1}
+.pn button,.jp button{border:1px solid #8886;background:none;color:inherit;border-radius:10px;padding:9px 13px;cursor:pointer;font:600 13px Inter}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:var(--bar);border:1px solid #8883;border-radius:14px;padding:14px}.stat b{display:block;font:800 26px Inter}.stat span{font-size:12px;opacity:.7}
+@media(max-width:640px){.stats{grid-template-columns:1fr 1fr}}
+.bar2{height:8px;border-radius:8px;background:#8883;margin:8px 0 12px;overflow:hidden}.bar2 i{display:block;height:100%;background:var(--ok)}
+.chk,.cd2{display:grid;gap:8px}.cd2{margin-top:12px}.cd2 h4{margin:0;font:700 12px Inter;text-transform:uppercase;letter-spacing:.6px;opacity:.7}
+.it{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:10px;border:1px solid #8883;font-size:13px}.it .ic{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;color:#fff;flex:none;font-weight:700}
+.it.ok .ic{background:var(--ok)}.it.wn .ic{background:var(--wn)}.it.er .ic{background:var(--er)}.it b{display:block;font-size:13px}.it span{font-size:12px;opacity:.8;display:block}.it a{color:inherit}.it .go{margin-left:auto}
+.it span b{display:inline;font-size:inherit}
+.fm{padding-bottom:0!important}.rr b{min-width:0;overflow-wrap:anywhere}.rr span{flex:none;max-width:42%}
+.tw{overflow:auto}.pn table{background:transparent;font-size:12px}.pn th{background:#8882;color:inherit;text-align:left;font-size:12px}.pn td{text-align:left;font-size:12px;border-color:#8884}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}.pill.valid{background:#157f3d22;color:var(--ok)}.pill.revoked{background:#c6282822;color:var(--er)}
+.pn td button{padding:4px 8px;font-size:11px;margin:1px}
+/* wizard */
+.stepper{display:flex;gap:4px;position:sticky;top:0;background:var(--bar);z-index:2;padding:4px 0 8px}
+.stepper button{flex:1;border:0;background:#8882;color:inherit;border-radius:10px;padding:6px 2px;font:600 10px Inter;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.stepper button i{font-style:normal;width:20px;height:20px;border-radius:50%;background:#8884;display:grid;place-items:center;font-size:11px}
+.stepper button.on{background:var(--ac);color:#fff}.stepper button.on i{background:#fff3}.stepper button.done i{background:var(--ok);color:#fff}.stepper button.bad i{background:var(--er);color:#fff}
+.stph{font:700 17px Playfair Display,serif;margin:6px 0 2px}.stps{font-size:12px;opacity:.75;margin:0 0 10px}
+.wzn{display:flex;gap:8px;position:sticky;bottom:0;background:var(--bar);padding:10px 0 4px;margin-top:12px}
+.fm .wzn button{flex:1;padding:11px;border-radius:10px;font:700 13px Inter}
+.rr{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #8883;font-size:12px}.rr span{opacity:.7}.rr b{text-align:right}
+.cf{display:flex!important;gap:8px;align-items:flex-start;margin:12px 0 8px;font-size:12px;font-weight:600}.cf input{width:auto!important;margin-top:2px}
+.rbt{display:flex;gap:6px;flex-wrap:wrap}.fm .rbt button{padding:10px 12px;border-radius:10px}.fm .rbt button:disabled{opacity:.4;cursor:not-allowed}
+.fm .cd2 .it{font-size:12px}
+.lg-card .lbtn{padding:12px;border-radius:10px;font:700 14px Inter;width:100%;cursor:pointer}
+/* marksheet colour / border variants */
+.page[data-border=solid] .ring{background:var(--n)}
+.page[data-border=double] .ring{background:var(--pb);box-shadow:inset 0 0 0 .7mm var(--n),inset 0 0 0 1.5mm var(--pb),inset 0 0 0 2.2mm var(--g),inset 0 0 0 3mm var(--pb),inset 0 0 0 3.7mm var(--n)}
+.page[data-border=lattice] .ring{background:repeating-linear-gradient(45deg,var(--n) 0 .35mm,transparent .35mm 1.6mm),repeating-linear-gradient(-45deg,var(--g) 0 .35mm,transparent .35mm 1.6mm),var(--pb);background-blend-mode:normal}
+.page[data-border=dashed] .ring{background:var(--pb);border:1.1mm dashed var(--n);box-sizing:border-box}
+.page[data-border=dotted] .ring{background:var(--pb);border:1.4mm dotted var(--g);box-sizing:border-box}
+.page[data-border=minimal] .ring{background:transparent}
+.page[data-corners=off] .cor{display:none}
+.fm .sw{width:34px;height:34px;border-radius:50%;padding:0!important;border:2px solid #8886!important}
+.meter{height:10px;border-radius:8px;background:#8883;overflow:hidden;margin:6px 0}.meter i{display:block;height:100%}
+.pn ol{margin:6px 0 0;padding-left:20px;display:grid;gap:5px;font-size:13px}
+@media print{@page{size:A4;margin:0}body{background:#fff}.bar,body::before,.fm{display:none!important}.app{display:block!important;height:auto!important}.app .wrap,.app.f .wrap,.app.p .wrap{display:block!important;overflow:visible!important;padding:0!important}.jp,.gate,.vw,#pDash,#pReg,#pSet,#pHelp{display:none!important}.page{margin:0!important}.page{zoom:1!important}.wrap{padding:0}.page{box-shadow:none}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="fdefs"></defs></svg><div class="jp" id="jp"><div class="bx" id="jbx"></div></div>
+<div id="vLogin" class="gate" hidden></div>
+<div id="vAdmin" class="iss" hidden><header class="bar" id="abar"><div class="brand"><span class="lgo" id="alogo"></span><div><b id="brand"></b><small>Marksheet issuing portal</small></div></div><nav><button class="nav on" data-p="pDash">Dashboard</button><button class="nav" data-p="pIssue">Issue</button><button class="nav" data-p="pReg">Register</button><button class="nav" data-p="pSet">Settings</button><button class="nav" data-p="pHelp">Help</button></nav><div class="usr"><button class="tab" data-v="f">Form</button><button class="tab" data-v="p">Preview</button><button id="lo">Logout</button></div></header>
+<div id="pDash"></div>
+<div id="pIssue" hidden><div class="app f"><aside class="fm" id="fm"></aside><div class="wrap" id="wrap"><div class="page">
+<div class="ring"></div><div class="ring2"></div><div class="ln1"></div><div class="ln2"></div>
+<div class="cor" style="left:.6mm;top:.6mm"></div><div class="cor" style="right:.6mm;top:.6mm"></div><div class="cor" style="left:.6mm;bottom:.6mm"></div><div class="cor" style="right:.6mm;bottom:.6mm"></div>
+<div class="guil"></div><svg class="wm" id="wm" viewBox="0 0 210 297" preserveAspectRatio="none"></svg><svg class="big" id="big" viewBox="0 0 200 200"></svg><div class="bgtxt" id="bgtxt"></div>
+<div class="vt" id="vl" style="left:9.9mm;transform:rotate(180deg)"></div>
+<div class="vt" style="right:9.9mm">THIS DOCUMENT IS PROTECTED BY MICROTEXT · SECURITY PATTERN · QR VERIFICATION</div>
+<svg class="spec" id="spec" viewBox="0 0 300 120"></svg>
+<div class="in">
+ <div style="display:flex;align-items:center;gap:4mm">
+  <div class="logo" id="logo"></div>
+  <div style="flex:1;text-align:center"><h1 id="uni"></h1><div id="addr" style="font-size:7pt;color:#444;line-height:1.4"></div></div>
+  <div class="photo" id="ph"></div>
+ </div>
+ <div class="ttl">STATEMENT OF MARKS · GRADE CARD (FINAL YEAR)</div>
+ <div id="exam" style="text-align:center;font-weight:700;font-size:8.5pt"></div>
+ <div class="grid" id="pd"></div>
+ <h4 id="h6"></h4><table id="t6"></table>
+ <div class="res" id="res"></div>
+ <h4>Consolidated semester-wise record (Sem I – VI)</h4><table id="ts"></table>
+ <div class="two">
+  <div><h4>Grading scale</h4>
+   <table style="margin-top:.5mm"><tr><th>% Marks</th><th>90–100</th><th>80–89</th><th>70–79</th><th>60–69</th><th>50–59</th><th>40–49</th><th>&lt;40</th></tr>
+   <tr><td>Grade</td><td>O</td><td>A+</td><td>A</td><td>B+</td><td>B</td><td>C</td><td>F</td></tr><tr><td>Points</td><td>10</td><td>9</td><td>8</td><td>7</td><td>6</td><td>5</td><td>0</td></tr></table>
+   <div style="font-size:6.3pt;margin-top:1mm;line-height:1.35">SGPA = Σ(Credits × Grade Points) / Σ Credits. CGPA = credit-weighted mean of all semester SGPA. Division: ≥75% First with Distinction · 60–74.99% First · 50–59.99% Second · 40–49.99% Third. T – Theory, P – Practical, INT – Internal, EXT – External, Min – minimum passing marks.</div></div>
+  <div><h4>Important instructions</h4><ol id="ins"></ol></div>
+ </div>
+ <div style="flex:1;min-height:0"></div>
+ <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:3mm">
+  <div style="display:flex;gap:2.5mm;align-items:flex-end"><div class="qr" id="qr"></div><div id="iss" style="font-size:6.3pt;line-height:1.5"></div></div>
+  
+  <div class="sgs" id="sgs"></div>
+ </div>
+ <div class="micro" id="micro"></div>
+ <div id="fnote" style="font-size:6pt;text-align:center;color:#555;margin-top:-1mm"></div>
+</div></div></div></div></div><div id="pReg" hidden></div><div id="pSet" hidden></div><div id="pHelp" hidden></div></div>
+
+<script>
+/* =====================================================================
+   EDIT ONLY THIS BLOCK — apne records yahan daalo, baaki page khud ban jayega
+   Images: logo / photo / signature me image ka URL ya base64 daal sakte ho ("" = default)
+   ===================================================================== */
+const TPL={BCA:{
+ university:{name:"SAMPLE UNIVERSITY OF TECHNOLOGY",short:"S",logo:"",sealName:"SAMPLE UNIVERSITY",city:"Sample City (U.P.)",
+  address:"Established under State Act No. 12 of 2005 · Recognised by UGC u/s 2(f) & 12(B) · NAAC Accredited 'A' Grade<br>University Campus, Knowledge Park, Sample City – 226 010, State · Tel: 0522-0000000 · exam@sampleuniversity.edu",
+  verifyUrl:"https://sampleuniversity.edu/verify"},
+ exam:{programme:"BACHELOR OF COMPUTER APPLICATIONS (BCA)",semester:"SEMESTER VI",session:"SEMESTER EXAMINATION, JUNE 2025"},
+ student:{photo:"",name:"AARAV KUMAR VERMA",roll:"22SU-BCA-01847",mother:"SMT. SUNITA VERMA",enroll:"SUT/2022/BCA/0412",
+  father:"SHRI SURESH KUMAR VERMA",reg:"SUT-22-0098172",dob:"14 / 08 / 2003",dobWords:"Fourteenth August Two Thousand Three",apaar:"2203-4591-7720",
+  gender:"Male",category:"General",nationality:"Indian",sessionYears:"2022 – 2025 (Admission Year 2022)",
+  college:"Shri Sample Degree College, Sample City",collegeCode:"0417",centre:"0417 – Sample City",
+  programmeCode:"BCA-3Y-NEP",medium:"English",examType:"Regular",attempt:"First"},
+ /* [code, subject, T/P, maxINT, maxEXT, obtINT, obtEXT, credits] */
+ subjects:[["BCA601","Cloud Computing","T",30,70,27,58,4],["BCA602","Mobile Application Development","T",30,70,26,55,4],["BCA603","Data Science with Python","T",30,70,28,63,4],["BCA604","Cyber Security & Cyber Laws","T",30,70,24,52,4],["BCA605","Cloud & Python Lab","P",20,30,18,26,2],["BCA606","Mobile App Development Lab","P",20,30,17,24,2],["BCA607","Major Project & Viva-Voce","P",50,100,44,86,6]],
+ /* previous semesters: [sem, maxMarks, obtained, credits, SGPA] */
+ previous:[["I",600,468,22,7.62],["II",600,481,22,7.85],["III",650,512,24,7.91],["IV",650,529,24,8.12],["V",650,540,26,8.30]],
+ issue:{serial:"SU-MS-2025-0098172",date:"15 July 2025",place:"Sample City"},
+ specimen:false,
+ footerNote:"Computer-generated statement · Dummy data used for design purposes only",
+ watermark:{text:"",opacity:10,emblem:true,pattern:true},
+ inkRough:50,
+ /* sign = cursive text (ya image URL in img), stamp = stamp ke upar likha text */
+ signatories:[{sign:"M. K. Singh",img:"",name:"Mr. M. K. Singh",title:"Asst. Registrar (Exams)",sigStyle:1,style:1,stampL1:"",stampL2:"",stampL3:"",stampColor:"#3a2fa8",stampTilt:-2,stampSize:100},
+              {sign:"R. K. Mehta",img:"",name:"Dr. R. K. Mehta",title:"Controller of Examinations",sigStyle:5,style:1,stampL1:"",stampL2:"",stampL3:"",stampColor:"#3a2fa8",stampTilt:1.5,stampSize:100}],
+ instructions:["This statement is issued on the basis of the result declared by the University and is subject to correction of errors, if any.","Any erasure, overwriting or alteration renders this statement invalid.","Verify authenticity by scanning the QR code or at the University website using the serial number.","Original Degree/Provisional Certificate will be issued separately after the convocation.","Any change in particulars must be reported within 30 days of issue."]
+},MCA:{
+ university:{name:"SAMPLE UNIVERSITY OF TECHNOLOGY",short:"S",logo:"",sealName:"SAMPLE UNIVERSITY",city:"Sample City (U.P.)",
+  address:"Established under State Act No. 12 of 2005 · Recognised by UGC u/s 2(f) & 12(B) · NAAC Accredited 'A' Grade<br>University Campus, Knowledge Park, Sample City – 226 010, State · Tel: 0522-0000000 · exam@sampleuniversity.edu",
+  verifyUrl:"https://sampleuniversity.edu/verify"},
+ exam:{programme:"MASTER OF COMPUTER APPLICATIONS (MCA)",semester:"SEMESTER IV",session:"SEMESTER EXAMINATION, JUNE 2026"},
+ student:{photo:"",name:"ANANYA SINGH CHAUHAN",roll:"24SU-MCA-00263",mother:"SMT. KAVITA SINGH",enroll:"SUT/2024/MCA/0158",
+  father:"SHRI RAJESH PRATAP SINGH",reg:"SUT-24-0143265",dob:"21 / 03 / 2001",dobWords:"Twenty-First March Two Thousand One",apaar:"2404-1178-5309",
+  gender:"Female",category:"OBC",nationality:"Indian",sessionYears:"2024 – 2026 (Admission Year 2024)",
+  college:"Sample Institute of Management & Computer Applications, Sample City",collegeCode:"0236",centre:"0236 – Sample City",
+  programmeCode:"MCA-2Y-NEP",medium:"English",examType:"Regular",attempt:"First"},
+ /* [code, subject, T/P, maxINT, maxEXT, obtINT, obtEXT, credits] */
+ subjects:[["MCA401","Artificial Intelligence & Deep Learning","T",30,70,28,61,4],["MCA402","Big Data Analytics","T",30,70,26,57,4],["MCA403","Blockchain & Information Security","T",30,70,25,54,4],["MCA404","Elective – Cloud Native Computing","T",30,70,27,59,4],["MCA405","AI & Big Data Lab","P",20,30,18,27,2],["MCA406","Dissertation & Viva-Voce","P",50,100,45,83,8]],
+ /* previous semesters: [sem, maxMarks, obtained, credits, SGPA] */
+ previous:[["I",600,462,24,7.70],["II",600,478,24,7.96],["III",600,497,26,8.28]],
+ issue:{serial:"SU-MS-2026-0143265",date:"20 July 2026",place:"Sample City"},
+ specimen:false,
+ footerNote:"Computer-generated statement · Dummy data used for design purposes only",
+ watermark:{text:"",opacity:10,emblem:true,pattern:true},
+ inkRough:50,
+ signatories:[{sign:"P. N. Tiwari",img:"",name:"Dr. P. N. Tiwari",title:"Deputy Registrar (Exams)",sigStyle:1,style:1,stampL1:"",stampL2:"",stampL3:"",stampColor:"#3a2fa8",stampTilt:-2,stampSize:100},
+              {sign:"S. K. Agarwal",img:"",name:"Prof. S. K. Agarwal",title:"Controller of Examinations",sigStyle:5,style:1,stampL1:"",stampL2:"",stampL3:"",stampColor:"#3a2fa8",stampTilt:1.5,stampSize:100}],
+ instructions:["This statement is issued on the basis of the result declared by the University and is subject to correction of errors, if any.","Any erasure, overwriting or alteration renders this statement invalid.","Verify authenticity by scanning the QR code or at the University website using the serial number.","Original Degree/Provisional Certificate will be issued separately after the convocation.","Any change in particulars must be reported within 30 days of issue."]
+}};TPL.BCA.tpl="BCA";TPL.MCA.tpl="MCA";
+const CFG=window.PORTAL_CONFIG||{},CU=CFG.university||{},SITE=Object.assign({keys:[],revoked:[],old:[]},window.SITE_DATA||{});
+function cfgApply(D){const u=D.university||(D.university={});if(CU.name)u.name=CU.name;if(CU.sealName)u.sealName=CU.sealName;if(CU.city)u.city=CU.city;if(CU.headerLines)u.address=CU.headerLines;if(CU.logo&&!u.logo)u.logo=CU.logo;if(CFG.siteUrl)u.verifyUrl=CFG.siteUrl}
+['BCA','MCA'].forEach(t=>{cfgApply(TPL[t]);if(CFG.footerNote!=null)TPL[t].footerNote=CFG.footerNote;TPL[t].design={n:'',g:'',pb:'',border:'braid',corners:true}});
+let DATA=JSON.parse(JSON.stringify(TPL.BCA));
+</script>
+<script>
+const $=id=>document.getElementById(id);
+const gr=p=>p>=90?["O",10]:p>=80?["A+",9]:p>=70?["A",8]:p>=60?["B+",7]:p>=50?["B",6]:p>=40?["C",5]:["F",0];
+const W=n=>{const a="One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen".split(" "),b="_ _ Twenty Thirty Forty Fifty Sixty Seventy Eighty Ninety".split(" "),f=x=>x<20?a[x-1]||"":b[x/10|0]+(x%10?" "+a[x%10-1]:"");let s="";if(n>=1000){s+=f(n/1000|0)+" Thousand ";n%=1000}if(n>=100){s+=a[(n/100|0)-1]+" Hundred ";n%=100}if(n)s+=f(n);return s.trim()};
+function render(){const D=DATA,U=D.university,S=D.student;document.querySelector('.page').dataset.theme=(D.tpl||'BCA').toLowerCase();if(typeof stepBadges=='function')stepBadges();if(typeof syncRec=='function')syncRec();{const dg=D.design||{},pg=document.querySelector('.page');['n','g','pb'].forEach(k=>dg[k]?pg.style.setProperty('--'+k,dg[k]):pg.style.removeProperty('--'+k));dg.g?pg.style.setProperty('--tt','color-mix(in srgb,'+dg.g+' 65%,#000)'):pg.style.removeProperty('--tt');pg.dataset.border=dg.border||'braid';pg.dataset.corners=dg.corners===false?'off':'on'}if($('ib'))$('ib').textContent=D.qrLink?'✓ Issued · '+D.recId+' · rev '+(D.rev||1)+' · signed QR (editing candidate, exam, marks or issue details clears it)':(D.recId?'Edited · press Issue to update '+D.recId+' (new revision)':'Not issued yet · QR is a placeholder');
+/* header */
+$('uni').innerHTML=U.name;$('addr').innerHTML=U.address;
+$('logo').innerHTML=U.logo?`<img src="${U.logo}">`:U.short;
+$('ph').innerHTML=S.photo?`<img src="${S.photo}">`:'<svg viewBox="0 0 100 125"><rect width="100" height="125" fill="#cfd6e2"/><circle cx="50" cy="48" r="20" fill="#8b95a8"/><path d="M10 125c0-30 18-44 40-44s40 14 40 44z" fill="#8b95a8"/></svg>';
+$('exam').textContent=`${D.exam.programme} · ${D.exam.semester} · ${D.exam.session}`;
+$('vl').textContent=`${U.name} · OFFICE OF THE CONTROLLER OF EXAMINATIONS`;
+/* personal details */
+const pd=[["Candidate's Name",S.name],["Roll No.",S.roll],["Mother's Name",S.mother],["Enrollment No.",S.enroll],["Father's Name",S.father],["Registration No.",S.reg],["Date of Birth",`${S.dob} (${S.dobWords})`],["APAAR / ABC ID",S.apaar],["Gender / Category",`${S.gender} · ${S.category} · ${S.nationality}`],["Session",S.sessionYears],["Name of College",S.college],["College Code / Centre",`${S.collegeCode} · ${S.centre}`],["Programme Code / Medium",`${S.programmeCode} · ${S.medium}`],["Exam Type / Attempt",`${S.examType} · ${S.attempt}`]];
+$('pd').innerHTML=pd.map(p=>`<div><b>${p[0]}:</b> ${p[1]}</div>`).join('');
+/* current semester */
+$('h6').textContent=`${D.exam.semester.replace('SEMESTER','Semester')} · Subject-wise performance`;
+let mx=0,ob=0,cr=0,pts=0,h='<tr><th rowspan=2>Code</th><th rowspan=2>Subject</th><th rowspan=2>T/P</th><th colspan=3>Max marks</th><th rowspan=2>Min</th><th colspan=3>Marks obtained</th><th rowspan=2>Cr.</th><th rowspan=2>Grade</th><th rowspan=2>GP</th><th rowspan=2>Remark</th></tr><tr><th>INT</th><th>EXT</th><th>Tot</th><th>INT</th><th>EXT</th><th>Tot</th></tr>';
+D.subjects.forEach(s=>{const m=s[3]+s[4],o=s[5]+s[6],g=gr(o/m*100);mx+=m;ob+=o;cr+=s[7];pts+=g[1]*s[7];
+h+=`<tr><td>${s[0]}</td><td class=l>${s[1]}</td><td>${s[2]}</td><td>${s[3]}</td><td>${s[4]}</td><td>${m}</td><td>${Math.round(m*.4)}</td><td>${s[5]}</td><td>${s[6]}</td><td><b>${o}</b></td><td>${s[7]}</td><td><b>${g[0]}</b></td><td>${g[1]}</td><td>${g[0]=="F"?"Fail":"Pass"}</td></tr>`});
+$('t6').innerHTML=h+`<tr class=t><td colspan=3 style="text-align:right">TOTAL</td><td colspan=3>${mx}</td><td></td><td colspan=3>${ob} (${W(ob)})</td><td>${cr}</td><td colspan=3>PASS</td></tr>`;
+/* consolidated */
+const sg6=pts/cr,P=[...D.previous,[D.exam.semester.replace('SEMESTER ',''),mx,ob,cr,sg6]];
+let TM=0,TO=0,TC=0,WS=0,r='<tr><th>Semester</th><th>Max marks</th><th>Marks obtained</th><th>%</th><th>Credits</th><th>SGPA</th><th>Result</th></tr>';
+P.forEach(p=>{TM+=p[1];TO+=p[2];TC+=p[3];WS+=p[3]*p[4];r+=`<tr><td>Semester ${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td><td>${(p[2]/p[1]*100).toFixed(2)}</td><td>${p[3]}</td><td>${p[4].toFixed(2)}</td><td>Pass</td></tr>`});
+const pc=TO/TM*100,cg=WS/TC,dv=pc>=75?"FIRST DIV. WITH DISTINCTION":pc>=60?"FIRST DIVISION":pc>=50?"SECOND DIVISION":"THIRD DIVISION";
+$('ts').innerHTML=r+`<tr class=t><td>GRAND TOTAL</td><td>${TM}</td><td>${TO}</td><td>${pc.toFixed(2)}</td><td>${TC}</td><td>${cg.toFixed(2)}</td><td>PASS</td></tr>`;
+$('res').innerHTML=`<div><small>Sem total</small><b>${ob}/${mx}</b></div><div><small>SGPA</small><b>${sg6.toFixed(2)}</b></div><div><small>CGPA</small><b>${cg.toFixed(2)}</b></div><div><small>Aggregate %</small><b>${pc.toFixed(2)}%</b></div><div><small>Final result</small><b style="font-size:7.5pt">PASS · ${dv}</b></div>`;
+$('ins').innerHTML=D.instructions.map(i=>`<li>${i}</li>`).join('');
+/* issue, qr, micro, watermark */
+$('iss').innerHTML=`Serial No.: <b>${D.issue.serial}</b><br>Date of Issue: ${D.issue.date}<br>Place: ${D.issue.place}<br>Scan QR to verify online<div class="bar39" style="margin-top:1mm"></div>`;
+try{const lk=D.qrLink||`${U.verifyUrl}?serial=${D.issue.serial}`;$('qr').innerHTML=qrSvg(lk);$('qr').style.width=$('qr').style.height=(D.qrLink?((CFG.qrSizeMm||26)+'mm'):'19mm')}catch(e){$('qr').textContent='QR too large'}
+$('bgtxt').textContent='GRADE CARD · EXAMINATION · UNIVERSITY ORDINANCE 14(B) · RESULT NOTIFICATION · THEORY · PRACTICAL · INTERNAL ASSESSMENT · END-SEMESTER · CBCS · NEP-2020 · CREDITS · SGPA · CGPA · '.repeat(60);
+$('micro').textContent=(U.name.replace(/ /g,'')+'·SECURE·ORIGINAL·').repeat(40);
+/* round rubber seal + stamped signature blocks */
+/* blue signatures + stamps */
+const tc=x=>String(x).toLowerCase().replace(/(^|\s|\()\w/g,c=>c.toUpperCase()).replace(/ Of /g,' of ');
+const pt=(r,a)=>[(100+r*Math.cos(a*Math.PI/180)).toFixed(1),(100+r*Math.sin(a*Math.PI/180)).toFixed(1)];
+const star=(cx,cy,r)=>`<polygon points="${[...Array(10)].map((_,i)=>{const a=(i*36-90)*Math.PI/180,q=i%2?r*.42:r;return (cx+q*Math.cos(a)).toFixed(1)+','+(cy+q*Math.sin(a)).toFixed(1)}).join(' ')}"/>`;
+let lv='';for(let k=0;k<9;k++){const a=108+k*12;for(const o of [[50,-38],[38,40]]){const p=pt(o[0],a);lv+=`<ellipse cx="${p[0]}" cy="${p[1]}" rx="7.5" ry="3" transform="rotate(${a+90+o[1]} ${p[0]} ${p[1]})"/>`}}
+const lau=`<path d="M${pt(44,105)} A44 44 0 0 1 ${pt(44,205)}" fill="none" stroke-width="1.8"/><g stroke="none">${lv}</g>`;
+const emb=`<g fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M100 49c-7 8-9 15-4 22 2-3 3-5 3-8 2 4 6 6 5 12 8-7 7-18-4-26z" stroke-width="1.6"/><path d="M88 77q12 15 24 0z"/><path d="M73 94q14-5 26 1v26q-12-5-26-1z"/><path d="M127 94q-14-5-26 1v26q12-5 26-1z"/><path d="M77 101q9-3 18 0M77 107q9-3 18 0M77 113q9-3 18 0M123 101q-9-3-18 0M123 107q-9-3-18 0M123 113q-9-3-18 0" stroke-width="1.3"/></g>`;
+/* ---- pen signature generator (seeded, so same name = same signature) ---- */
+const hs=t=>{let h=2166136261;for(const c of String(t)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
+const rng=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const sigPts=(st,txt,R)=>{const b=29,L=Math.max(3,txt.replace(/[^a-z]/gi,'').length),rr=(a,c)=>a+R()*(c-a),P=[];let x=0,sl=.3,W=66,ul=1,ln=0;
+ const T=[[[0,.05],[.12,.55],[.3,.75],[.45,.35],[.58,.1],[.7,.5],[.88,.6],[1,.15]],[[0,.1],[.2,.5],[.38,1],[.52,.8],[.46,.3],[.3,.2],[.5,.4],[.75,.3],[1,.1]],[[0,.1],[.2,.55],[.45,.6],[.5,.2],[.3,.1],[.2,.35],[.6,.45],[.85,.25],[1,.1]],[[0,.05],[.25,.4],[.5,1],[.62,.55],[.72,.1],[.85,.4],[1,.15]]];
+ const cap=h=>[[0,b+1],[-1,b-8*h],[2,b-18*h-R()*3],[9,b-22*h],[14,b-14*h],[10,b-3],[2,b-6],[1,b-14*h],[10,b-17*h]];
+ if(st==1){P.push(...cap(1));x=17;const n=Math.min(4,Math.max(3,L>>2)),w=11;for(let i=0;i<n;i++){const t=T[Math.floor(R()*4)],h=12+R()*7;t.forEach(q=>P.push([x+q[0]*w,b-q[1]*h*(.85+R()*.3)]));x+=w}P.push([x+3,b-4],[x+14,b-9]);sl=.32;W=62}
+ else if(st==2){ln=1;P.push([0,b+1]);const n=4+Math.floor(R()*3);for(let i=0;i<n;i++){x+=rr(4,6);P.push([x,b-rr(14,26)]);x+=rr(2.5,4);P.push([x,b-rr(1,6)])}P.push([x+rr(8,12),b-rr(8,12)]);sl=.2;W=58;ul=2}
+ else if(st==3){P.push([0,b]);const n=6+Math.floor(R()*3);for(let i=0;i<n;i++){x+=rr(4,6);if(R()<.3){P.push([x,b-rr(6,10)],[x+3,b-rr(1,3)],[x+1,b-rr(4,7)]);x+=3}else{P.push([x,b-rr(4,11)],[x+2.5,b-rr(0,3)])}}P.push([x+14,b-4]);sl=.12;W=76;ul=0}
+ else if(st==4){P.push(...cap(1.15));for(let i=0;i<10;i++)P.push([22+i*4.5,b-7+Math.sin(i*1.5)*3.2*(1-i/12)]);P.push([68,b-10],[74,b-4]);sl=.3;W=72;ul=0}
+ else if(st==5){const n=3+Math.floor(R()*2);for(let i=0;i<n;i++){P.push([x,b+1],[x+2,b-14],[x+3,b-26-R()*3],[x+5.5,b-28],[x+6,b-20],[x+7,b-6],[x+9,b+1]);x+=rr(9,12)}P.push([x+3,b-3],[x+13,b-12]);sl=.5;W=54;ul=3}
+ else{P.push([0,b-2]);const n=5+Math.floor(R()*3);for(let i=0;i<n;i++){P.push([x+2,b-8],[x+5,b-10],[x+7,b-5],[x+4,b-1],[x+3,b-4],[x+8,b-6]);x+=7}P.push([x+4,b-6],[x+12,b-16]);sl=.25;W=62;ul=0}
+ return {P,sl,W,ul,ln,b}};
+const lin=(P,k)=>{const o=[];for(let i=0;i<P.length-1;i++)for(let j=0;j<k;j++){const t=j/k;o.push([P[i][0]+(P[i+1][0]-P[i][0])*t,P[i][1]+(P[i+1][1]-P[i][1])*t])}o.push(P[P.length-1]);return o};
+const mk=(st,txt,R)=>{const g=sigPts(st,txt,R),b=g.b;let q=(g.ln?lin(g.P,5):spl(g.P,7)).map(p=>[p[0]+(b-p[1])*g.sl,p[1]]);
+ const x0=Math.min(...q.map(p=>p[0])),x1=Math.max(...q.map(p=>p[0])),y0=Math.min(...q.map(p=>p[1])),y1=Math.max(...q.map(p=>p[1]));let sc=Math.min(1.3,g.W/(x1-x0));if((y1-y0)*sc>31)sc=31/(y1-y0);
+ const cx=(x0+x1)/2;q=q.map(p=>[75+(p[0]-cx)*sc,b+(p[1]-b)*sc]);
+ const ym=Math.min(...q.map(p=>p[1])),dy=ym<3?3-ym:0;q=q.map(p=>[p[0],p[1]+dy]);
+ const xa=75-(x1-x0)*sc/2-4,xb=75+(x1-x0)*sc/2+8,yb=Math.min(37,Math.max(...q.map(p=>p[1]))+5),w=xb-xa,ULS=[];
+ if(g.ul==1)ULS.push(spl([[xa,yb],[xa+w*.33,yb-1.5],[xa+w*.66,yb-3],[xb,yb-5]],8));
+ if(g.ul==2)ULS.push(lin([[xa+6,yb-1],[xb-8,yb-3]],6),lin([[xa+14,yb+2],[xb-2,yb-1]],6));
+ if(g.ul==3)ULS.push(spl([[61,yb],[79,yb-1],[93,yb-5]],8));
+ return {pts:q,ul:ULS}};
+const spl=(P,k)=>{const o=[];for(let i=0;i<P.length-1;i++){const p0=P[Math.max(0,i-1)],p1=P[i],p2=P[i+1],p3=P[Math.min(P.length-1,i+2)];for(let j=0;j<k;j++){const t=j/k,t2=t*t,t3=t2*t;o.push([0,1].map(d=>.5*(2*p1[d]+(-p0[d]+p2[d])*t+(2*p0[d]-5*p1[d]+4*p2[d]-p3[d])*t2+(-p0[d]+3*p1[d]-3*p2[d]+p3[d])*t3)))}}o.push(P[P.length-1]);return o};
+const ribbon=(pts,w0)=>{const L=[],Rr=[],n=pts.length;pts.forEach((p,i)=>{const a=pts[Math.max(0,i-1)],b=pts[Math.min(n-1,i+1)],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1,nx=-dy/l,ny=dx/l,tp=Math.min(1,i/8,(n-1-i)/14),h=Math.max(.1,w0*(.72+.28*Math.sin(i*.3)+(dy>0?.2:0))*(.25+.75*tp))/2;L.push([p[0]+nx*h,p[1]+ny*h]);Rr.push([p[0]-nx*h,p[1]-ny*h])});return 'M'+L.concat(Rr.reverse()).map(q=>q[0].toFixed(2)+' '+q[1].toFixed(2)).join('L')+'Z'};
+const sig=s=>{if(s.img)return `<image href="${s.img}" x="10" y="2" width="130" height="36" preserveAspectRatio="xMidYMid meet"/>`;const t=s.sign||'x',st=Math.min(6,Math.max(1,Math.round(+s.sigStyle||1))),R=rng(hs(t)+(+s.style||1)*7919+st*131),g=mk(st,t,R);return `<g fill="#1237b8" opacity=".94"><path d="${ribbon(g.pts,1.8)}"/>${g.ul.map(u=>`<path d="${ribbon(u,.9)}"/>`).join('')}</g>`};
+/* ---- rubber-ink filters (roughness from form) ---- */
+const flt=(i,seed,warp,scale,grain,thr)=>`<filter id="${i}" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="${warp}" numOctaves="2" seed="${seed}" result="w"/><feDisplacementMap in="SourceGraphic" in2="w" scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="r"/><feTurbulence type="fractalNoise" baseFrequency="${grain}" numOctaves="3" seed="${seed+4}" result="g"/><feColorMatrix in="g" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3.4 0 0 0 ${thr}" result="sp"/><feTurbulence type="fractalNoise" baseFrequency=".022" numOctaves="2" seed="${seed+9}" result="p"/><feColorMatrix in="p" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2.6 0 0 0 -.15" result="pr"/><feComposite in="r" in2="sp" operator="in" result="a"/><feComposite in="a" in2="pr" operator="in"/></filter>`;
+const rough=Math.min(100,Math.max(0,D.inkRough==null||D.inkRough===''?50:+D.inkRough))/100;
+$('fdefs').innerHTML=flt('rb2',11,.06,(.8+rough*1.4).toFixed(2),.9,(-.45-rough*.8).toFixed(2))+flt('rb3',21,.035,(1.5+rough*4).toFixed(2),.75,(-.5-rough*.9).toFixed(2));
+/* ---- signature + stamp block ---- */
+const SB=s=>{const c=s.stampColor||'#3a2fa8',tl=+s.stampTilt||0,sz=Math.min(125,Math.max(60,+s.stampSize||100))/100;
+ return `<svg class="sgv" viewBox="0 0 150 80">${sig(s)}<text x="75" y="47" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="7.2" font-weight="700" fill="#1237b8">${s.name}</text><g filter="url(#rb2)"><g transform="translate(75 68) rotate(${tl}) scale(${sz}) translate(-75 -68)" fill="${c}" text-anchor="middle" font-family="Inter,Arial,sans-serif"><text x="75" y="58" font-size="9.4" font-weight="600">${s.stampL1||s.title}</text><text x="75" y="68" font-size="8" font-weight="500">${s.stampL2||tc(U.name)}</text><text x="75" y="77" font-size="8" font-weight="500">${s.stampL3||U.city}</text></g></g></svg>`};
+$('sgs').innerHTML=D.signatories.map(s=>`<div class="sg">${SB(s)}</div>`).join('');
+$('fnote').textContent=D.footerNote==null?'Computer-generated statement':D.footerNote;
+$('spec').style.display=D.specimen?'block':'none';
+$('spec').innerHTML=`<g filter="url(#rb3)" fill="#d63a3a" stroke="#d63a3a"><rect x="6" y="6" width="288" height="108" rx="6" fill="none" stroke-width="7"/><rect x="16" y="16" width="268" height="88" rx="3" fill="none" stroke-width="1.6"/><g stroke="none" font-family="Inter,Arial,sans-serif" font-weight="800" text-anchor="middle"><text x="150" y="66" font-size="44" letter-spacing="1">SPECIMEN</text><text x="150" y="96" font-size="22">NOT VALID</text></g><path d="M26 88h56M218 88h56" stroke-width="2.2"/></g>`;
+/* ---- background watermark: staggered text pattern + big centre emblem ---- */
+const WM=Object.assign({text:'',opacity:10,emblem:true,pattern:true},D.watermark||{}),wt=String(WM.text||U.name).toUpperCase(),op=(+WM.opacity||0)/100,fs=Math.min(4.6,58/(wt.length*.68)).toFixed(2);
+$('wm').style.display=WM.pattern?'block':'none';$('wm').style.opacity=op;
+$('wm').innerHTML=`<defs><pattern id="wmp" width="124" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(-30)"><g fill="currentColor" font-family="Playfair Display,serif" font-weight="700" font-size="${fs}" text-anchor="middle"><text x="31" y="9">${wt}</text><text x="93" y="22">${wt}</text></g></pattern></defs><rect width="210" height="297" fill="url(#wmp)"/>`;
+$('big').style.display=WM.emblem?'block':'none';$('big').style.opacity=Math.min(1,op*1.15);
+$('big').innerHTML=`<defs><path id="wt" d="M${pt(72,165)} A72 72 0 1 1 ${pt(72,15)}"/><path id="wb" d="M${pt(87,160)} A87 87 0 0 0 ${pt(87,20)}"/></defs><g fill="currentColor" stroke="currentColor"><circle cx="100" cy="100" r="96" fill="none" stroke-width="3.8"/><circle cx="100" cy="100" r="91" fill="none" stroke-width="1.3"/><circle cx="100" cy="100" r="63" fill="none" stroke-width="2.4"/><circle cx="100" cy="100" r="59.5" fill="none" stroke-width=".9"/><g stroke="none" font-family="Inter,Arial,sans-serif" font-weight="600"><text font-size="17" letter-spacing="2.2"><textPath href="#wt" startOffset="50%" text-anchor="middle">${U.sealName}</textPath></text><text font-size="15" letter-spacing="1.4"><textPath href="#wb" startOffset="50%" text-anchor="middle">${U.city}</textPath></text>${star(21,114,7)}${star(179,114,7)}${star(100,138,5.5)}</g>${lau}<g transform="matrix(-1 0 0 1 200 0)">${lau}</g>${emb}</g>`;
+}
+/* ================= INPUT FORM ================= */
+let DEF=JSON.parse(JSON.stringify(DATA));DATA.tpl='BCA';
+function norm(){if(!DATA.tpl)DATA.tpl='BCA';DEF=JSON.parse(JSON.stringify(TPL[DATA.tpl]||TPL.BCA));for(const k of ['university','exam','student','issue','watermark'])DATA[k]={...DEF[k],...DATA[k]};if(DATA.specimen===undefined)DATA.specimen=false;if(DATA.inkRough==null)DATA.inkRough=50;if(DATA.footerNote==null)DATA.footerNote=DEF.footerNote;['subjects','previous','instructions','signatories'].forEach(k=>{if(!Array.isArray(DATA[k]))DATA[k]=JSON.parse(JSON.stringify(DEF[k]))});DATA.signatories.forEach((s,i)=>{if(s.sigStyle==null||s.sigStyle==='')s.sigStyle=[1,5][i]||1});DATA.design=Object.assign({n:'',g:'',pb:'',border:'braid',corners:true},DATA.design||{});cfgApply(DATA)}
+try{const sv=localStorage.getItem('mp_work');if(sv){DATA=JSON.parse(sv);norm()}}catch(e){}
+const fm=$('fm'),app=document.querySelector('.app');
+const get=(o,p)=>p.split('.').reduce((a,k)=>a&&a[k],o),set=(o,p,v)=>{const k=p.split('.'),l=k.pop();k.reduce((a,x)=>a[x],o)[l]=v};
+const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const SIGST=['1 · Classic loops','2 · Sharp angular','3 · Flat scribble','4 · Initial + wave','5 · Tall slanted','6 · Compact script'];
+const SC=[["Code",0],["Subject name",0],["T / P",0],["Max INT",1],["Max EXT",1],["Got INT",1],["Got EXT",1],["Credits",1]],PC=[["Semester",0],["Max marks",1],["Obtained",1],["Credits",1],["SGPA",1]];
+const fld=(p,l,t)=>{const v=get(DATA,p);return t=='t'?`<label>${l}<textarea data-p="${p}" rows="4">${esc(v)}</textarea></label>`:t=='img'?`<label>${l}<input type="file" accept="image/*" data-img="${p}"><small>${v?'✓ added · <a href="#" data-act="clr" data-p="'+p+'">remove</a>':'not added (default shown)'}</small></label>`:t=='c'?`<label>${l}<input type="color" data-p="${p}" value="${esc(v||'#3a2fa8')}" style="height:30px;padding:2px"></label>`:t=='n'?`<label>${l}<input type="number" step="any" data-p="${p}" value="${esc(v)}"></label>`:t=='s'?`<label>${l}<select data-p="${p}">${SIGST.map((o,k)=>`<option value="${k+1}" ${+v==k+1?'selected':''}>${o}</option>`).join('')}</select></label>`:t=='r'?`<label>${l}<input type="range" min="0" max="100" data-p="${p}" value="${esc(v==null||v===''?50:v)}"></label>`:`<label>${l}<input data-p="${p}" value="${esc(v)}"></label>`};
+const flds=a=>a.map(x=>fld(x[0],x[1],x[2])).join('');
+const row=(k,C,i,cls,act)=>`<div class="card ${cls}">`+DATA[k][i].map((v,j)=>`<label>${C[j][0]}<input data-a="${k}" data-i="${i}" data-j="${j}" ${C[j][1]?'type="number" step="any"':''} value="${esc(v)}"></label>`).join('')+`<button data-act="${act}" data-i="${i}">✕ Remove</button></div>`;
+const sec=(t,b,o)=>`<details${o?' open':''}><summary>${t}</summary>${b}</details>`;
+function build0(){
+ const sg=i=>sec(`Signatory ${i+1}`,flds([[`signatories.${i}.name`,'Name'],[`signatories.${i}.title`,'Designation'],[`signatories.${i}.sign`,'Signature text (used to generate the pen signature)'],[`signatories.${i}.sigStyle`,'Signature style','s'],[`signatories.${i}.img`,'OR upload signature image (PNG)','img'],[`signatories.${i}.style`,'Variation number (1 to 99, same style new look)','n']])+`<button data-act="draw" data-i="${i}">✍ Draw signature with mouse / finger</button>`);
+ fm.innerHTML=`<label>Programme template<select id="tplSel"><option value="BCA" ${DATA.tpl!='MCA'?'selected':''}>BCA · 3 years · navy / gold</option><option value="MCA" ${DATA.tpl=='MCA'?'selected':''}>MCA · 2 years · green / copper</option></select></label><small id="ib"></small>`+
+ sec('1. University / header',flds([["university.name","University name"],["university.short","Monogram letter (e.g. S)"],["university.sealName","Emblem / stamp top text (short name)"],["university.city","City text (e.g. Varanasi (U.P.))"],["university.address","Address / accreditation lines (&lt;br&gt; = new line)","t"],["university.verifyUrl","Verification page URL (QR yahan jayega)"],["university.logo","Upload logo","img"]]),1)+
+ sec('2. Exam details',flds([["exam.programme","Programme"],["exam.semester","Semester (e.g. SEMESTER VI)"],["exam.session","Exam session text"]]))+
+ sec('3. Candidate details',flds([["student.photo","Upload candidate photo","img"],["student.name","Candidate name"],["student.mother","Mother's name"],["student.father","Father's name"],["student.dob","Date of birth"],["student.dobWords","DOB in words"],["student.gender","Gender"],["student.category","Category"],["student.nationality","Nationality"],["student.roll","Roll no."],["student.enroll","Enrollment no."],["student.reg","Registration no."],["student.apaar","APAAR / ABC ID"],["student.sessionYears","Session years"],["student.college","College name"],["student.collegeCode","College code"],["student.centre","Exam centre"],["student.programmeCode","Programme code"],["student.medium","Medium"],["student.examType","Exam type"],["student.attempt","Attempt"]]))+
+ sec('4. Current semester subjects & marks',`<small>Total, grade, SGPA, CGPA, % sab khud calculate hote hain.</small>`+DATA.subjects.map((_,i)=>row('subjects',SC,i,'sub','dsub')).join('')+`<button data-act="asub">＋ Add subject</button>`,1)+
+ sec('5. Previous semesters',DATA.previous.map((_,i)=>row('previous',PC,i,'prev','dprev')).join('')+`<button data-act="aprev">＋ Add semester</button>`)+
+ sec('6. Issue details',flds([["issue.serial","Serial number"],["issue.date","Date of issue"],["issue.place","Place"],["footerNote","Footer note (blank = nothing printed)"]]))+
+ sg(0)+sg(1)+
+ sec('7. Instructions',`<label>One per line<textarea data-ins rows="7">${esc(DATA.instructions.join('\n'))}</textarea></label>`)+sec('8. Stamps (rubber ink)',flds([["inkRough","Ink roughness (0 = clean, 100 = very patchy)","r"]])+[0,1].map(i=>sec(`Stamp ${i+1} (signatory ${i+1})`,flds([[`signatories.${i}.stampL1`,'Line 1 (blank = designation)'],[`signatories.${i}.stampL2`,'Line 2 (blank = university name)'],[`signatories.${i}.stampL3`,'Line 3 (blank = city)'],[`signatories.${i}.stampColor`,'Ink colour','c'],[`signatories.${i}.stampTilt`,'Tilt in degrees (e.g. -3)','n'],[`signatories.${i}.stampSize`,'Size % (60 to 125)','n']]))).join('')+`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-chk="specimen" ${DATA.specimen?'checked':''} style="width:auto"> Show SPECIMEN · NOT VALID stamp</label>`)+sec('9. Background watermark',flds([["watermark.text","Watermark text (blank = university name)"],["watermark.opacity","Visibility (0 to 25)","n"]])+`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-chk="watermark.pattern" ${(DATA.watermark||{}).pattern!==false?'checked':''} style="width:auto"> Repeating text pattern</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-chk="watermark.emblem" ${(DATA.watermark||{}).emblem!==false?'checked':''} style="width:auto"> Big centre emblem</label>`)+designSec()}
+const dl=async(name,txt,mime)=>{try{if(window.claude&&claude.use){const d=await claude.use('downloads');if(d){await d.save({filename:name,data:txt});return 1}}}catch(e){if(e&&e.code=='declined')return 1}
+ try{const u=URL.createObjectURL(new Blob([txt],{type:mime||'application/json'})),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();return 1}catch(e){return 0}};
+const blankOf=o=>Array.isArray(o)?o.map(blankOf):o&&typeof o=='object'?Object.fromEntries(Object.entries(o).map(([k,v])=>[k,blankOf(v)])):typeof o=='number'?0:typeof o=='boolean'?false:'';
+function blankJSON(){const b=blankOf(DEF);b.watermark={text:'',opacity:10,emblem:true,pattern:true};b.inkRough=50;b.specimen=false;b.footerNote='';b.design=clone(DEF.design||{n:'',g:'',pb:'',border:'braid',corners:true});b.tpl=DEF.tpl||'BCA';delete b.qrLink;delete b.recId;delete b.rev;b.signatories.forEach((s,i)=>{s.sigStyle=[1,5][i]||1;s.style=1;s.stampColor='#3a2fa8';s.stampTilt=0;s.stampSize=100});b.subjects.forEach(r=>{r[2]='T'});
+ return Object.assign({_help:'Fill every empty value. subjects rows = [code, subject name, T or P, max INT, max EXT, got INT, got EXT, credits]. previous rows = [semester label, max marks, obtained, credits, SGPA]. Add or remove rows as needed. Images (photo, logo, signature) are best added from the form. Save this file, then use Load JSON.'},b)}
+function jpanel(m){const bx=$('jbx'),T=m=='blank'?JSON.stringify(blankJSON(),null,1):m=='save'?JSON.stringify(DATA,null,1):'',title={save:'Save JSON (current data)',blank:'Blank JSON template',load:'Load JSON'}[m];
+ bx.innerHTML=`<b>${title}</b><small>${m=='load'?'File choose karo ya JSON paste karke Apply dabao.':'Download dabao. Download na ho to Copy karke .json file mein paste kar lo.'}</small>${m=='load'?'<input type="file" accept=".json,application/json" id="jf" style="margin:6px 0">':''}<textarea id="jt" spellcheck="false">${esc(T)}</textarea><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${m=='load'?'<button class="pri" id="ja">Apply</button>':'<button class="pri" id="jd">Download</button><button id="jc">Copy</button>'}<button id="jx">Close</button></div><small id="jm"></small>`;
+ $('jp').classList.add('on');const msg=t=>$('jm').textContent=t;$('jx').onclick=()=>$('jp').classList.remove('on');
+ if(m=='load'){$('jf').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('jt').value=r.result;msg('File padh li, ab Apply dabao.')};r.readAsText(f)};
+  $('ja').onclick=()=>{try{const o=JSON.parse($('jt').value);delete o._help;DATA=o;norm();build();upd();$('jp').classList.remove('on')}catch(e){msg('JSON galat hai: '+e.message)}}}
+ else{$('jd').onclick=async()=>{const ok=await dl(m=='blank'?'marksheet-blank.json':'marksheet-data.json',$('jt').value);msg(ok?'Download request bhej di. Na mile to Copy use karo.':'Download nahi ho paya, Copy use karo.')};
+  $('jc').onclick=()=>{const t=$('jt');t.select();let ok=0;try{ok=document.execCommand('copy')}catch(e){}try{navigator.clipboard.writeText(t.value);ok=1}catch(e){}msg(ok?'Copy ho gaya.':'Text select ho gaya, Ctrl+C se copy karo.')}}}
+function pad(i){const bx=$('jbx');bx.innerHTML=`<b>Draw signature ${i+1}</b><small>Mouse ya ungli se signature banao</small><canvas id="cv" width="640" height="220" style="width:100%;height:150px;border:1px dashed #8889;border-radius:8px;background:#fff;touch-action:none;margin:6px 0"></canvas><div style="display:flex;gap:6px"><button class="pri" id="ps">Use this signature</button><button id="pc">Clear</button><button id="px">Cancel</button></div>`;$('jp').classList.add('on');
+ const c=$('cv'),x=c.getContext('2d');x.lineWidth=4;x.lineCap=x.lineJoin='round';x.strokeStyle='#1237b8';let d=0,l;
+ const xy=e=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]};
+ c.onpointerdown=e=>{d=1;l=xy(e);try{c.setPointerCapture(e.pointerId)}catch(z){}x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(l[0]+.1,l[1]+.1);x.stroke()};
+ c.onpointermove=e=>{if(!d)return;const p=xy(e);x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(p[0],p[1]);x.stroke();l=p};c.onpointerup=()=>d=0;
+ $('pc').onclick=()=>x.clearRect(0,0,c.width,c.height);$('px').onclick=()=>$('jp').classList.remove('on');
+ $('ps').onclick=()=>{const im=x.getImageData(0,0,c.width,c.height).data;let a=c.width,b=c.height,r=0,t=0;for(let y=0;y<c.height;y++)for(let q=0;q<c.width;q++)if(im[(y*c.width+q)*4+3]>20){if(q<a)a=q;if(q>r)r=q;if(y<b)b=y;if(y>t)t=y}
+  if(r<a){$('jp').classList.remove('on');return}const o=document.createElement('canvas');o.width=r-a+8;o.height=t-b+8;o.getContext('2d').drawImage(c,a-4,b-4,o.width,o.height,0,0,o.width,o.height);DATA.signatories[i].img=o.toDataURL('image/png');$('jp').classList.remove('on');build();upd()}}
+const PRESETS=[['Navy & gold','#1f3a7a','#b8912a','#fffdf6'],['Emerald & copper','#0b5d4b','#c0762b','#f8fcf9'],['Maroon & gold','#7a1f2b','#c9a227','#fffaf3'],['Purple & silver','#4b2c83','#8d97a8','#fbf9ff'],['Charcoal & orange','#2b2f36','#e07a1f','#fbfbfa'],['Teal & coral','#0e6e7e','#e0604a','#f7fcfc'],['Crimson & navy','#b3202f','#1f3a7a','#fffafa'],['Forest & sand','#2f5d2f','#b79b5e','#fbfcf7']];
+const TC={BCA:{n:'#1f3a7a',g:'#b8912a',pb:'#fffdf6'},MCA:{n:'#0b5d4b',g:'#c0762b',pb:'#f8fcf9'}};
+const BORDERS=[['braid','Braided (default)'],['solid','Solid band'],['double','Double line'],['lattice','Lattice'],['dashed','Dashed'],['dotted','Dotted'],['minimal','Minimal (inner lines only)']];
+function designSec(){const dg=DATA.design||{},t=TC[DATA.tpl]||TC.BCA,lc=(l,k)=>`<label>${l}<input type="color" data-p="design.${k}" value="${esc(dg[k]||t[k])}" style="height:34px;padding:2px"></label>`;
+ return sec('10. Marksheet colour & border',`<small class="sub">Optional. Default colours stay as they are. Use this to make a particular semester or batch stand out.</small><div class="rbt" style="margin:8px 0">${PRESETS.map((p,k)=>`<button class="sw" data-act="preset" data-i="${k}" title="${esc(p[0])}" style="background:linear-gradient(135deg,${p[1]} 50%,${p[2]} 50%)"></button>`).join('')}</div>${lc('Primary colour (headings, table, border)','n')}${lc('Accent colour (gold lines, title)','g')}${lc('Paper tint','pb')}<label>Border style<select data-p="design.border">${BORDERS.map(b=>`<option value="${b[0]}" ${(dg.border||'braid')==b[0]?'selected':''}>${b[1]}</option>`).join('')}</select></label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-chk="design.corners" ${dg.corners!==false?'checked':''} style="width:auto"> Corner rosettes</label><div style="margin-top:6px"><button data-act="dreset">Reset to template default</button></div>`)}
+function build(){build0();stepify()}
+function issue(){goStep(5)}
+let STEP=1;
+const STP=[['Programme','Choose the template and check exam / header details.'],['Candidate','Personal and enrolment details of the candidate.'],['Marks','Subject-wise marks and earlier semesters. Totals, grades, SGPA and CGPA are calculated automatically.'],['Signatures','Signatories, rubber stamps and finishing touches.'],['Review','Check what is pending, then issue the marksheet.']];
+const SECMAP={'1.':1,'2.':1,'3.':2,'4.':3,'5.':3,'6.':4,'7.':4,'8.':4,'9.':4,'10':4,'Si':4};
+function stepify(){const keep=fm.scrollTop,tool=[],secs=[];[...fm.children].forEach(n=>n.tagName=='DETAILS'?secs.push(n):tool.push(n));
+ const body=STP.map((x,i)=>{const d=document.createElement('div');d.className='stp';d.dataset.s=i+1;d.hidden=i+1!=STEP;d.innerHTML=`<div class="stph">Step ${i+1} · ${x[0]}</div><p class="stps">${x[1]}</p>`;return d});
+ tool.forEach(n=>body[0].appendChild(n));
+ secs.forEach(d=>{const t=d.querySelector('summary').textContent.trim(),k=t.startsWith('Signatory')?'Si':t.slice(0,2);d.open=true;body[(SECMAP[k]||4)-1].appendChild(d)});
+ body[4].insertAdjacentHTML('beforeend','<div id="rvbox"></div>');
+ fm.innerHTML='';const sp=document.createElement('div');sp.className='stepper';sp.id='stepper';const nv=document.createElement('div');nv.className='wzn';nv.id='wzn';fm.append(sp,...body,nv);
+ stepBadges();navUp();if(STEP==5)reviewUp();fm.scrollTop=keep}
+function stepBadges(){const sp=$('stepper');if(!sp)return;const bad={};vchk().er.forEach(x=>bad[x.s]=1);sp.innerHTML=STP.map((x,i)=>{const n=i+1,c=(n==STEP?'on':'')+(bad[n]&&n!=STEP?' bad':'')+(n<STEP&&!bad[n]?' done':'');return `<button class="${c}" data-st="${n}"><i>${bad[n]&&n!=STEP?'!':n<STEP&&!bad[n]?'✓':n}</i>${x[0]}</button>`}).join('')}
+function navUp(){const n=$('wzn');if(!n)return;n.innerHTML=(STEP>1?'<button data-nav="-1">← Back</button>':'')+(STEP<5?`<button class="pri" data-nav="1">Next: ${STP[STEP][0]} →</button>`:'')}
+function goStep(n){STEP=Math.max(1,Math.min(5,n));fm.querySelectorAll('.stp').forEach(d=>d.hidden=+d.dataset.s!=STEP);navUp();stepBadges();if(STEP==5)reviewUp();fm.scrollTop=0;app.className='app f'}
+function reviewUp(){const b=$('rvbox');if(b)b.innerHTML=reviewHTML()}
+function nextSerial(){const R=LS('mp_reg')||[],y=new Date().getFullYear();let n=(LS('mp_seq')||0)+1,s;do{s=`${CFG.serialPrefix||'SU-MS'}-${y}-${String(n).padStart(6,'0')}`;n++}while(R.some(r=>r.id==s));return s}
+function reviewHTML(){const D=DATA,S=D.student,v=vchk(),R=LS('mp_reg')||[],old=D.recId&&R.find(r=>r.id==D.recId),k=calc({m:D.subjects,h:D.previous,p:['',D.exam.semester]});
+ const row=(a,b)=>`<div class="rr"><span>${a}</span><b>${esc(b)}</b></div>`,li=(c,x)=>`<div class="it ${c}"><div class="ic">${c=='er'?'✕':c=='wn'?'!':'✓'}</div><div><b>${esc(x.t)}</b>${x.s?`<span><a href="#" data-go="${x.s}">Fix in step ${x.s} →</a></span>`:''}</div></div>`;
+ let h='';if(D.qrLink)h+=`<div class="it ok"><div class="ic">✓</div><div><b>Issued · ${esc(D.recId)} · revision ${D.rev||1}</b><span>Editing candidate, exam, marks or issue details clears the QR. Colours, stamps and signatures do not.</span></div></div>`;
+ h+=`<div class="cd2"><h4>Summary</h4>${row('Candidate',S.name)}${row('Roll / Enrollment',S.roll+' / '+S.enroll)}${row('Programme',D.exam.programme)}${row('Semester · Session',D.exam.semester+' · '+D.exam.session)}${row('Result',(k.fail?'FAIL':'PASS')+' · CGPA '+k.cg.toFixed(2)+' · '+k.pc.toFixed(2)+'%')}${row('Will be issued as',old?old.id+' (revision '+(old.rev+1)+')':nextSerial()+' (revision 1)')}</div>`;
+ h+=`<div class="cd2"><h4>Pending · must fix (${v.er.length})</h4>${v.er.length?v.er.map(x=>li('er',x)).join(''):li('ok',{t:'No missing required details'})}</div>`;
+ h+=`<div class="cd2"><h4>Warnings (${v.wn.length})</h4>${v.wn.length?v.wn.map(x=>li('wn',x)).join(''):li('ok',{t:'No warnings'})}</div>`;
+ h+=`<label class="cf"><input type="checkbox" id="cfm"> I have matched every detail with the original records and read the warnings above.</label><div class="rbt"><button class="pri" id="cgo" data-rv="go" disabled>${old?'Confirm & issue revision '+(old.rev+1):'Confirm & issue marksheet'}</button>${old?'<button data-rv="new">Issue as new serial</button>':''}</div>`;
+ h+=`<div class="cd2"><h4>Tools</h4><div class="rbt"><button data-act="print">Print</button><button data-act="json">Save JSON</button><button data-act="load">Load JSON</button><button data-act="blank">Blank JSON</button><button data-act="new">New blank</button><button data-act="reset">Reset sample</button></div></div>`;return h}
+fm.addEventListener('click',e=>{const t=e.target;let b;if(b=t.closest('[data-st]'))goStep(+b.dataset.st);else if(b=t.closest('[data-nav]'))goStep(STEP+ +b.dataset.nav);else if(b=t.closest('[data-go]')){e.preventDefault();goStep(+b.dataset.go)}else if(b=t.closest('[data-rv]')){if(!b.disabled&&(document.getElementById('cfm')||{}).checked)doIssue(b.dataset.rv=='new')}});
+fm.addEventListener('change',e=>{if(e.target.id=='cfm'){const g=$('cgo');if(g)g.disabled=!(e.target.checked&&!vchk().er.length)}});
+let T;const upd=()=>{clearTimeout(T);T=setTimeout(()=>{try{render()}catch(e){console.error(e)}try{localStorage.setItem('mp_work',JSON.stringify(DATA))}catch(e){}fit()},120)};
+const rs=(f,jpg,cb)=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,360/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;const x=c.getContext('2d');if(jpg){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}x.drawImage(im,0,0,c.width,c.height);cb(c.toDataURL(jpg?'image/jpeg':'image/png',.8))};im.src=r.result};r.readAsDataURL(f)};
+fm.addEventListener('input',e=>{const t=e.target,d=t.dataset;if(d.p)set(DATA,d.p,t.value);else if(d.a){const j=+d.j,C=d.a=='subjects'?SC:PC;DATA[d.a][+d.i][j]=C[j][1]?(parseFloat(t.value)||0):t.value}else if(d.ins!==undefined)DATA.instructions=t.value.split('\n').filter(x=>x.trim());else return;if(DATA.qrLink&&(d.a||/^(student|exam|issue)\./.test(d.p||'')))DATA.qrLink='';upd()});
+fm.addEventListener('change',e=>{const t=e.target;if(t.id=='tplSel'){loadTpl(t.value);return}if(t.dataset.chk){set(DATA,t.dataset.chk,t.checked);upd();return}const f=t.files&&t.files[0];if(!f)return;if(t.dataset.img){const p=t.dataset.img;rs(f,p.endsWith('photo'),u=>{set(DATA,p,u);build();upd()})}else if(t.dataset.imp!==undefined){const r=new FileReader();r.onload=()=>{try{DATA=JSON.parse(r.result);norm();build();upd()}catch(x){}};r.readAsText(f)}});
+fm.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;e.preventDefault();const a=b.dataset.act,i=+b.dataset.i;
+ if(a=='print')window.print();
+ else if(a=='preset'){const P=PRESETS[i];DATA.design=Object.assign({},DATA.design,{n:P[1],g:P[2],pb:P[3]});build();upd()}else if(a=='dreset'){DATA.design={n:'',g:'',pb:'',border:'braid',corners:true};build();upd()}else if(a=='issue')issue(false);else if(a=='issuenew')issue(true);else if(a=='new'){const o=blankJSON();delete o._help;DATA=o;norm();build();upd()}
+ else if(a=='draw')pad(i);else if(a=='json')jpanel('save');else if(a=='blank')jpanel('blank');else if(a=='load')jpanel('load');else if(a=='html')dlHTML();
+ else if(a=='asub'){DATA.subjects.push(["","","T",30,70,0,0,4]);build();upd()}
+ else if(a=='dsub'){DATA.subjects.splice(i,1);build();upd()}
+ else if(a=='aprev'){DATA.previous.push(["",0,0,0,0]);build();upd()}
+ else if(a=='dprev'){DATA.previous.splice(i,1);build();upd()}
+ else if(a=='clr'){set(DATA,b.dataset.p,'');build();upd()}
+ else if(a=='reset'){if(b.dataset.sure){DATA=JSON.parse(JSON.stringify(DEF));build();upd()}else{b.dataset.sure=1;b.textContent='Click again to confirm';setTimeout(()=>{b.textContent='Reset sample';delete b.dataset.sure},3000)}}});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{app.className='app '+b.dataset.v;fit()});
+function fit(){const p=document.querySelector('.page'),w=$('wrap').clientWidth-32;if(w>100)p.style.zoom=Math.min(1,w/794)}
+addEventListener('resize',fit);
+/* ================= PORTAL (admin) : login · wizard · register · publish ================= */
+const DEF_LOGIN='b8243b4ddf05f254d69006a6d0ba9e584b2b35c06c2b08990219ac8cbe1c05c1',LOGIN=CFG.loginHash||DEF_LOGIN;
+const PH=/YOUR|sample|dummy|lorem|example\.(com|edu|org)|0{5,}/i;
+const UN=()=>CU.name||DATA.university.name;
+const clone=o=>JSON.parse(JSON.stringify(o));
+const LS=k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},WS=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return 1}catch(e){return 0}};
+const te=s=>new TextEncoder().encode(s);
+const b64u=b=>{let s='';new Uint8Array(b).forEach(c=>s+=String.fromCharCode(c));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const unb=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0))};
+const EC={name:'ECDSA',namedCurve:'P-256'},SG={name:'ECDSA',hash:'SHA-256'};
+const rnd=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
+const sha=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',te(s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+const kidOf=async j=>(await sha(j.x+j.y)).slice(0,8).toUpperCase().replace(/(....)(....)/,'$1-$2');
+async function ensureKey(){if(LS('mp_key'))return;const kp=await crypto.subtle.generateKey(EC,true,['sign','verify']),priv=await crypto.subtle.exportKey('jwk',kp.privateKey),pub=await crypto.subtle.exportKey('jwk',kp.publicKey);WS('mp_key',{priv,pub,kid:await kidOf(pub)})}
+const qrSvg=t=>{const q=qrcode(0,'L');q.addData(t,'Byte');q.make();const n=q.getModuleCount();let d='';for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))d+=`M${c} ${r}h1v1h-1z`;return `<svg viewBox="-2 -2 ${n+4} ${n+4}" shape-rendering="crispEdges" style="width:100%;height:100%;display:block"><rect x="-2" y="-2" width="${n+4}" height="${n+4}" fill="#fff"/><path d="${d}"/></svg>`};
+/* ---- addresses ---- */
+const defBase=()=>location.href.split('#')[0].split('?')[0];
+const normBase=u=>{u=String(u).replace(/[#?].*$/,'');if(!/\/$/.test(u)&&!/\.[a-z0-9]+$/i.test(u.split('/').pop()))u+='/';return u};
+const pageDir=u=>normBase(u).replace(/[^/]*$/,'');
+const siteBase=()=>(CFG.siteUrl&&!/YOUR/i.test(CFG.siteUrl))?CFG.siteUrl:defBase();
+const verifyBase=()=>pageDir(siteBase())+'verify.html';
+const localVerify=f=>pageDir(defBase())+'verify.html'+f;
+const frag=r=>`#id=${r.vid}&k=${r.key}&r=${r.rev}`;
+const cpy=(t,el)=>{let ok=0;try{const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();ok=document.execCommand('copy');a.remove()}catch(e){}try{navigator.clipboard.writeText(t);ok=1}catch(e){}if(el)el.textContent=ok?'Copied ✓':'Copy failed, select the text and press Ctrl+C'};
+function tp(title,txt,fname,apply,onsave){const bx=$('jbx');bx.innerHTML=`<b>${title}</b>${apply?'<input type="file" id="tf" accept=".json,application/json" style="margin:6px 0">':''}<textarea id="tt" spellcheck="false">${esc(txt)}</textarea><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${apply?'<button class="pri" id="ta">Apply</button>':''}${fname?'<button class="pri" id="tdl">Download</button>':''}<button id="tc">Copy</button><button id="tx">Close</button></div><small id="tm"></small>`;$('jp').classList.add('on');
+ const m=t=>$('tm').textContent=t,sv=()=>{if(onsave)onsave()};$('tx').onclick=()=>$('jp').classList.remove('on');$('tc').onclick=()=>{cpy($('tt').value,$('tm'));sv()};
+ if(fname)$('tdl').onclick=async()=>{sv();m(await dl(fname,$('tt').value,fname.endsWith('.js')?'text/javascript':'application/json')?'Download requested (if no file appears, use Copy)':'Download failed, use Copy')};
+ if(apply){$('tf').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('tt').value=r.result;m('File read. Now press Apply')};r.readAsText(f)};$('ta').onclick=()=>{try{apply($('tt').value);$('jp').classList.remove('on')}catch(e){m('Error: '+e.message)}}}}
+const logoHtml=()=>CU.logo?`<img src="${esc(CU.logo)}" alt="">`:esc((UN()||'U')[0]);
+/* ---- views / routing ---- */
+const VIEWS=['vLogin','vAdmin'],TABS=['pDash','pIssue','pReg','pSet','pHelp'];
+const show=v=>{VIEWS.forEach(x=>$(x).hidden=x!=v);window.scrollTo(0,0)};
+const bh=()=>document.documentElement.style.setProperty('--bh',($('abar').offsetHeight||54)+'px');
+const dropHash=()=>{try{history.replaceState(null,'',location.href.split('#')[0])}catch(e){}};
+function route(){if(location.hash=='#verify'){location.replace(pageDir(defBase())+'verify.html');return}if(sessionStorage.getItem('mp_ok')=='1')enter();else loginView()}
+addEventListener('hashchange',route);addEventListener('resize',bh);
+function loginView(msg){show('vLogin');$('vLogin').innerHTML=`<aside class="lg-side"><div><div class="lgo">${logoHtml()}</div><h1>${esc(UN())}</h1><p>${esc(CU.tagline||'Examination Section')}</p><ul><li><i>✓</i><span>Issue digitally signed marksheets</span></li><li><i>▦</i><span>Instant QR verification for anyone</span></li><li><i>🔒</i><span>No database · records are encrypted</span></li></ul></div><small>© ${new Date().getFullYear()} ${esc(UN())}</small></aside><main class="lg-main"><div class="lg-card"><h2>Staff sign in</h2><p class="sub">Authorised examination staff only.</p><label>Username<input id="lu" autocomplete="username" autocapitalize="none" spellcheck="false"></label><label>Password<div class="pw"><input id="lp" type="password" autocomplete="current-password"><button type="button" id="lsh" aria-label="Show password">👁</button></div></label><button class="pri lbtn" id="lgo">Sign in</button><div class="err" id="lerr">${esc(msg||'')}</div><div class="alt"><a href="verify.html">Verify a marksheet →</a></div></div></main>`;
+ const go=async()=>{const er=$('lerr'),L=LS('mp_lock')||{n:0,t:0};if(Date.now()<L.t){er.textContent='Too many attempts. Try again in '+Math.ceil((L.t-Date.now())/1000)+'s';return}
+  try{const h=await sha($('lu').value.trim().toLowerCase()+':'+$('lp').value);if(h===LOGIN){WS('mp_lock',{n:0,t:0});sessionStorage.setItem('mp_ok','1');enter()}else{L.n++;if(L.n>=5){L.t=Date.now()+30000;L.n=0}WS('mp_lock',L);er.textContent='Wrong username or password'}}catch(e){er.textContent='This browser has no crypto support (https / GitHub Pages required)'}};
+ $('lgo').onclick=go;$('lp').onkeydown=e=>{if(e.key=='Enter')go()};$('lu').onkeydown=e=>{if(e.key=='Enter')$('lp').focus()};$('lsh').onclick=()=>{const p=$('lp');p.type=p.type=='password'?'text':'password'}}
+async function enter(){try{await ensureKey();await migrateReg()}catch(e){}$('brand').textContent=UN();$('alogo').innerHTML=logoHtml();show('vAdmin');tab('pDash')}
+function tab(p){TABS.forEach(x=>$(x).hidden=x!=p);document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.p==p));$('vAdmin').classList.toggle('iss',p=='pIssue');if(p=='pDash')dashView();if(p=='pReg')regView();if(p=='pSet')setView();if(p=='pHelp')helpView();bh();if(p=='pIssue')fit()}
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>tab(b.dataset.p));
+$('lo').onclick=()=>{sessionStorage.removeItem('mp_ok');dropHash();loginView()};
+function loadTpl(t){DATA=clone(TPL[t]);DEF=clone(TPL[t]);DATA.tpl=t;build();upd()}
+/* ---- calc + payload (summary stored in the encrypted record) ---- */
+const calc=c=>{let mx=0,ob=0,cr=0,pt=0;const rows=c.m.map(s=>{const M=s[3]+s[4],O=s[5]+s[6],g=gr(O/M*100);mx+=M;ob+=O;cr+=s[7];pt+=g[1]*s[7];return{s,M,O,g:g[0]}});const sg=pt/cr;let TM=mx,TO=ob,TC=cr,WW=sg*cr;c.h.forEach(p=>{TM+=p[1];TO+=p[2];TC+=p[3];WW+=p[3]*p[4]});const pc=TO/TM*100;return{rows,mx,ob,cr,sg,cg:WW/TC,pc,div:pc>=75?'First Division with Distinction':pc>=60?'First Division':pc>=50?'Second Division':'Third Division',fail:rows.some(r=>r.g=='F')}};
+const payload=D=>{const S=D.student,k=calc({m:D.subjects,h:D.previous,p:['',D.exam.semester]});return{v:3,t:D.tpl||'BCA',s:[S.name,S.roll,S.enroll,D.exam.programme,D.exam.semester,D.exam.session],x:[k.fail?'FAIL':'PASS',k.cg.toFixed(2),k.pc.toFixed(2),k.div],i:[D.issue.serial,D.issue.date,D.issue.place]}};
+/* ---- validation: what is pending / what to watch ---- */
+function vchk(){const D=DATA,S=D.student,er=[],wn=[],need=(v,l,s)=>{if(!String(v==null?'':v).trim())er.push({s,t:l+' is missing'})};
+ need(D.exam.programme,'Programme',1);need(D.exam.semester,'Semester',1);need(D.exam.session,'Exam session',1);need(D.university.name,'University name',1);
+ need(S.name,'Candidate name',2);need(S.roll,'Roll number',2);need(S.enroll,'Enrollment number',2);need(S.reg,'Registration number',2);need(S.dob,'Date of birth',2);need(S.father,"Father's name",2);need(S.mother,"Mother's name",2);need(S.college,'College name',2);
+ if(!D.subjects.length)er.push({s:3,t:'No subjects added'});
+ D.subjects.forEach((x,i)=>{const n='Subject '+(i+1)+': ';if(!String(x[0]).trim()||!String(x[1]).trim())er.push({s:3,t:n+'code / name missing'});if(!(x[3]+x[4]>0))er.push({s:3,t:n+'max marks missing'});if(x[5]>x[3]||x[6]>x[4])er.push({s:3,t:n+'obtained marks exceed maximum'});if(!(x[7]>0))wn.push({s:3,t:n+'credits are 0'})});
+ const exp=D.tpl=='MCA'?3:5;if(D.previous.length!=exp)wn.push({s:3,t:(D.tpl||'BCA')+' normally has '+exp+' earlier semesters; you have '+D.previous.length});
+ D.previous.forEach((p,i)=>{if(!(p[1]>0)||p[2]>p[1])er.push({s:3,t:'Earlier semester '+(i+1)+': check marks'})});
+ D.signatories.forEach((g,i)=>{const n='Signatory '+(i+1)+': ';if(!String(g.name||'').trim()||!String(g.title||'').trim())er.push({s:4,t:n+'name / designation missing'});if(!g.img&&!String(g.sign||'').trim())er.push({s:4,t:n+'signature missing'})});
+ if(!S.photo)wn.push({s:2,t:'Candidate photo not uploaded (a placeholder will print)'});
+ if(!D.university.logo)wn.push({s:1,t:'University logo not added (a letter is used)'});
+ const txt=[D.university.name,D.university.address,D.footerNote,S.college,...D.signatories.map(g=>g.name+' '+g.title)].join(' '),m=txt.match(PH);if(m)wn.push({s:4,t:'Placeholder text still present: "'+m[0]+'" (check university, college, signatories, footer note)'});
+ if(D.specimen)wn.push({s:4,t:'SPECIMEN · NOT VALID stamp is ON. It will print on this marksheet'});
+ const base=siteBase();if(!CFG.siteUrl||/YOUR/i.test(CFG.siteUrl))wn.push({t:'siteUrl is not set in config.js. QR will point to '+verifyBase()});else if(/localhost|127\.0\.0\.1|^file:|claude/i.test(base))wn.push({t:'QR link points to a local / preview address and will not open on other phones'});
+ if(!ghReady())wn.push({t:'GitHub publishing is not connected. After issuing you must publish the record (Settings) or the QR will show "No record found"'});
+ if(keyPending())wn.push({t:'Your public key is not published yet (site-data.js). Publish it from Settings'});
+ if(!LS('mp_backup'))wn.push({t:'Signing key is not backed up yet (Settings → Backup key)'});
+ return{er,wn}}
+/* ---- records: encrypted file per marksheet ---- */
+const ALPHA='abcdefghjkmnpqrstuvwxyz23456789',vidGen=()=>[...rnd(12)].map(x=>ALPHA[x%31]).join('');
+async function buildFile(rec){const K=LS('mp_key'),c=payload(rec.data);c.k=K.kid;c.r=rec.rev;c.st=rec.status;c.at=rec.at;const p=JSON.stringify(c),pk=await crypto.subtle.importKey('jwk',K.priv,EC,false,['sign']),g=new Uint8Array(await crypto.subtle.sign(SG,pk,te(p))),ak=await crypto.subtle.importKey('raw',unb(rec.key),'AES-GCM',false,['encrypt']),iv=rnd(12),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},ak,te(JSON.stringify({k:K.kid,p,g:b64u(g)}))));return JSON.stringify({v:3,iv:b64u(iv),ct:b64u(ct)})}
+async function migrateReg(){const R=LS('mp_reg')||[];let ch=0;for(const r of R){if(!r.vid){r.vid=vidGen();r.key=b64u(rnd(16));r.fv=1;r.pub=0;r.rev=r.rev||1;r.file=await buildFile(r);ch=1}}if(ch)WS('mp_reg',R)}
+async function doIssue(asNew){try{
+ const v=vchk();if(v.er.length)throw new Error('Fix the pending items first ('+v.er.length+').');
+ if(!(window.crypto&&crypto.subtle))throw new Error('Secure browser context needed (https / GitHub Pages / localhost).');
+ await ensureKey();const R=LS('mp_reg')||[];let ser=asNew?'':(DATA.recId||''),old=ser?R.find(r=>r.id==ser):null;
+ if(!old){ser=nextSerial();WS('mp_seq',(LS('mp_seq')||0)+1)}
+ const rev=old?old.rev+1:1;DATA.issue.serial=ser;if(!DATA.issue.date)DATA.issue.date=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+ const rec={id:ser,vid:old?old.vid:vidGen(),key:old?old.key:b64u(rnd(16)),rev,at:Date.now(),status:old?old.status:'valid',tpl:DATA.tpl||'BCA',fv:(old?old.fv:0)+1,pub:old?old.pub:0};
+ const link=verifyBase()+frag(rec);qrSvg(link);DATA.qrLink=link;DATA.recId=ser;DATA.rev=rev;rec.data=clone(DATA);rec.file=await buildFile(rec);
+ if(old)R[R.indexOf(old)]=rec;else R.push(rec);
+ if(!WS('mp_reg',R))throw new Error('Browser storage is full. Use smaller images or export + delete old records.');
+ build();upd();issued(link,ser,rev)}catch(e){tp('Could not issue',String(e.message||e))}}
+function issued(link,ser,rev){const gr_=ghReady();$('jbx').innerHTML=`<b>✓ Issued · ${esc(ser)} (revision ${rev})</b><div class="cd2" style="margin-top:10px"><div class="it ok"><div class="ic">1</div><div><b>Print the marksheet</b><span>The QR is now on the page. Printing does not need internet.</span><button class="pri" id="ip" style="margin-top:6px">Print now</button></div></div><div class="it wn"><div class="ic">2</div><div><b>Publish this record (required)</b><span>The QR link looks the record up on the public site. Until it is published the QR shows "No record found".</span><button class="pri" id="ig" style="margin-top:6px">${gr_?'Publish now':'Open Settings → Publish'}</button></div></div><div class="it ok"><div class="ic">3</div><div><b>Test the link</b><span>Open the verify page after publishing, then scan the QR with a phone.</span><div class="rbt" style="margin-top:6px"><button id="io">Open verify page</button><button id="ic">Copy link</button></div></div></div></div><button id="ix" style="margin-top:10px">Close</button><small id="im"></small>`;$('jp').classList.add('on');
+ $('ix').onclick=()=>$('jp').classList.remove('on');$('ip').onclick=()=>{$('jp').classList.remove('on');setTimeout(()=>window.print(),150)};$('ig').onclick=()=>{if(gr_)publishUI();else{$('jp').classList.remove('on');tab('pSet')}};$('io').onclick=()=>{$('jp').classList.remove('on');openVerify(link.slice(link.indexOf('#')))};$('ic').onclick=()=>cpy(link,$('im'))}
+function openVerify(f){if(window.PREVIEW_MODE)return previewFrame(f);window.open(localVerify(f),'_blank')}
+/* ---- publishing to GitHub (or ZIP for manual upload) ---- */
+const ghInfo=()=>{const c=CFG.github||{};let o=c.owner,r=c.repo;const m=/^https?:\/\/([^./]+)\.github\.io\/?([^/?#]*)/.exec(siteBase());if(m){if(!o)o=m[1];if(!r)r=m[2]||(m[1]+'.github.io')}return{owner:o,repo:r,branch:c.branch||'main',dir:c.dataDir||'data'}};
+const ghReady=()=>!!window.PREVIEW_MODE||!!(LS('mp_gh')&&ghInfo().owner&&ghInfo().repo);
+const keyPending=()=>{const K=LS('mp_key');return !!K&&!(SITE.keys.some(k=>k.kid==K.kid)||LS('mp_keypub')==K.kid)};
+const pendingRecs=()=>(LS('mp_reg')||[]).filter(r=>r.fv!==r.pub);
+const siteDataText=()=>{const K=LS('mp_key'),keys=[...SITE.keys.filter(k=>k.kid!=K.kid),{kid:K.kid,jwk:K.pub}];return '/* Generated by Marksheet Portal · '+new Date().toISOString()+' */\nwindow.SITE_DATA='+JSON.stringify({keys},null,1)+';\n'};
+function pendingFiles(){const K=LS('mp_key'),g=ghInfo(),f=[];if(keyPending())f.push({path:'site-data.js',text:siteDataText(),done:()=>WS('mp_keypub',K.kid)});pendingRecs().forEach(r=>f.push({path:g.dir+'/'+r.vid+'.json',text:r.file,done:()=>{const R=LS('mp_reg')||[],x=R.find(y=>y.id==r.id);if(x&&x.fv==r.fv){x.pub=r.fv;WS('mp_reg',R)}}}));return f}
+const ghHead=()=>({Authorization:'Bearer '+LS('mp_gh'),Accept:'application/vnd.github+json'});
+async function ghPut(path,text,msg){if(window.PREVIEW_MODE){localStorage.setItem('mp_pub_'+path,text);return}
+ const g=ghInfo();if(!g.owner||!g.repo)throw new Error('GitHub owner / repo not detected. Set siteUrl in config.js');if(!LS('mp_gh'))throw new Error('GitHub token missing (Settings → Publish)');
+ const url=`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${path}`;let sha;const r0=await fetch(url+'?ref='+encodeURIComponent(g.branch),{headers:ghHead()});if(r0.status==200)sha=(await r0.json()).sha;else if(r0.status!=404)throw new Error('GitHub '+r0.status+' while reading '+path);
+ const r=await fetch(url,{method:'PUT',headers:{...ghHead(),'Content-Type':'application/json'},body:JSON.stringify({message:msg,content:btoa(unescape(encodeURIComponent(text))),branch:g.branch,...(sha?{sha}:{})})});if(!r.ok){let m='';try{m=(await r.json()).message}catch(e){}throw new Error('GitHub '+r.status+': '+m)}}
+async function publishAll(prog){const f=pendingFiles();for(let i=0;i<f.length;i++){prog&&prog(i,f.length,f[i].path);await ghPut(f[i].path,f[i].text,'Marksheet portal: '+f[i].path);f[i].done()}return f.length}
+async function publishUI(){const bx=$('jbx');bx.innerHTML='<b>Publishing…</b><div id="pl" class="sub" style="margin:8px 0"></div><button id="px">Close</button>';$('jp').classList.add('on');$('px').onclick=()=>{$('jp').classList.remove('on');refresh()};const pl=$('pl');
+ try{const n=await publishAll((i,t,p)=>pl.textContent='Uploading '+(i+1)+' of '+t+': '+p);pl.innerHTML=n?'✓ Published '+n+' file(s). GitHub Pages shows them in 1 to 2 minutes (cached copies can take up to ~10 minutes).':'Nothing is pending.'}catch(e){pl.innerHTML='<span class="err">'+esc(e.message)+'</span><br>Nothing was lost: fix the problem and press Publish again, or use the ZIP download in Settings.'}refresh()}
+function refresh(){if(!$('pDash').hidden)dashView();if(!$('pSet').hidden)setView();if(!$('pReg').hidden)regView()}
+function crc32(u){const t=crc32.t||(crc32.t=Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0}));let r=-1;for(const b of u)r=t[(r^b)&255]^(r>>>8);return(r^-1)>>>0}
+function zipStore(files){const parts=[],cen=[];let off=0;const w16=(a,v)=>a.push(v&255,(v>>8)&255),w32=(a,v)=>a.push(v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255);
+ files.forEach(f=>{const nm=te(f.name),d=te(f.text),crc=crc32(d),h=[];w32(h,0x04034b50);w16(h,20);w16(h,0);w16(h,0);w16(h,0);w16(h,0x21);w32(h,crc);w32(h,d.length);w32(h,d.length);w16(h,nm.length);w16(h,0);parts.push(new Uint8Array(h),nm,d);
+  const c=[];w32(c,0x02014b50);w16(c,20);w16(c,20);w16(c,0);w16(c,0);w16(c,0);w16(c,0x21);w32(c,crc);w32(c,d.length);w32(c,d.length);w16(c,nm.length);w16(c,0);w16(c,0);w16(c,0);w16(c,0);w32(c,0);w32(c,off);cen.push(new Uint8Array(c),nm);off+=h.length+nm.length+d.length});
+ const cs=cen.reduce((a,b)=>a+b.length,0),e=[];w32(e,0x06054b50);w16(e,0);w16(e,0);w16(e,files.length);w16(e,files.length);w32(e,cs);w32(e,off);w16(e,0);
+ const all=[...parts,...cen,new Uint8Array(e)],out=new Uint8Array(all.reduce((a,b)=>a+b.length,0));let p=0;all.forEach(b=>{out.set(b,p);p+=b.length});return out}
+async function dlZip(){const f=pendingFiles();if(!f.length){tp('Nothing pending','All records and the public key are already marked as published.');return}await dl('marksheet-publish.zip',zipStore(f.map(x=>({name:x.path,text:x.text}))),'application/zip')}
+/* ---- dashboard ---- */
+function setupItems(){const R=LS('mp_reg')||[],K=LS('mp_key'),bad=f=>!String(f||'').trim()||PH.test(f),flds=[['name',CU.name],['address',CU.address],['phone',CU.phone],['email',CU.email],['website',CU.website],['officialPortal',CU.officialPortal]].filter(x=>bad(x[1])).map(x=>x[0]),pend=pendingRecs().length,s=storeInfo();
+ return[
+ {st:CFG.siteUrl&&!/YOUR|localhost|^file:|claude/i.test(CFG.siteUrl)?'ok':'er',t:'Site URL set in config.js',d:'Set siteUrl to your GitHub Pages address. QR links are built from it.'},
+ {st:flds.length?'wn':'ok',t:'University & contact details filled',d:flds.length?'Still placeholder in config.js: '+flds.join(', '):'Shown on the verification page.'},
+ {st:CU.logo?'ok':'wn',t:'University logo added',d:'Put logo.png next to index.html and set university.logo in config.js.'},
+ {st:LOGIN!==DEF_LOGIN?'ok':'wn',t:'Default login changed',d:'Settings → Login → generate a new loginHash and paste it in config.js.'},
+ {st:K?'ok':'er',t:'Signing key created',d:'Created automatically on first login.'},
+ {st:LS('mp_backup')?'ok':'wn',t:'Signing key backed up',d:'Without it you cannot update or revoke records signed with this key.',go:'pSet'},
+ {st:ghReady()?'ok':'wn',t:'GitHub publishing connected',d:'Settings → Publish: save a GitHub token, or use the ZIP download for manual upload.',go:'pSet'},
+ {st:keyPending()?'wn':'ok',t:'Public key published (site-data.js)',d:'Publish from Settings. The verify page needs it.',go:'pSet'},
+ {st:pend?'wn':'ok',t:pend?pend+' record(s) waiting to be published':'All records published',d:'Until published, the QR shows "No record found".',go:'pSet'},
+ {st:s.unbacked?'wn':'ok',t:'Register backed up',d:s.unbacked?s.unbacked+' record(s) are not in any backup yet. Register → Export backup.':'All records are included in your last backup.',go:'pReg'},
+ {st:R.length?'ok':'wn',t:'First marksheet issued',d:'Use the Issue tab.',go:'pIssue'}]}
+function dashView(){const R=LS('mp_reg')||[],it=setupItems(),done=it.filter(x=>x.st=='ok').length,mo=new Date().getMonth(),pend=pendingRecs().length+(keyPending()?1:0),st=(a,b)=>`<div class="stat"><b>${b}</b><span>${a}</span></div>`;
+ $('pDash').innerHTML=`<div class="pn"><div class="cd"><div class="row"><div><h2>Welcome</h2><p class="sub">${esc(UN())} · marksheet issuing portal</p></div><span class="sp"></span><button class="pri" data-g="pIssue">＋ Issue new marksheet</button><button data-g="pReg">Open register</button><button data-pv="1">Preview verify page</button></div></div>
+ ${pend?`<div class="it wn"><div class="ic">!</div><div><b>${pend} item(s) waiting to be published</b><span>QR codes of unpublished records show "No record found" to the public.</span></div><button class="pri go" data-pub="1">${ghReady()?'Publish now':'Open Publish'}</button></div>`:''}
+ <div class="stats">${st('Total issued',R.length)}${st('Valid',R.filter(r=>r.status=='valid').length)}${st('Revoked',R.filter(r=>r.status!='valid').length)}${st('This month',R.filter(r=>new Date(r.at).getMonth()==mo).length)}</div>
+ <div class="cd"><div class="row"><h3 style="margin:0">Setup checklist · what is left</h3><span class="sp"></span><b>${done}/${it.length} done</b></div><div class="bar2"><i style="width:${done/it.length*100}%"></i></div><div class="chk">${it.map(x=>`<div class="it ${x.st}"><div class="ic">${x.st=='ok'?'✓':x.st=='wn'?'!':'✕'}</div><div><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>${x.go&&x.st!='ok'?`<button class="go" data-g="${x.go}">Open</button>`:''}</div>`).join('')}</div></div>
+ <div class="cd"><h3>Where is my data?</h3>${storeBox()}<p class="sub">Your register is saved in <b>this browser</b> (no expiry; lost only if browser data is cleared or another browser / device is used). Published records are <b>encrypted files</b> in your GitHub repo (data folder). Details: Help tab.</p></div>
+ <div class="cd"><h3>Recently issued</h3>${R.length?R.slice(-5).reverse().map(r=>`<div class="rr"><span>${esc(r.id)} · rev ${r.rev} · ${r.pub===r.fv?'published':'<b>not published</b>'}</span><b>${esc(r.data.student.name)}</b></div>`).join(''):'<p class="sub">Nothing issued yet.</p>'}</div></div>`}
+$('pDash').onclick=e=>{if(e.target.closest('[data-pv]')){openPreview('ok');return}if(e.target.closest('[data-pub]')){if(ghReady())publishUI();else tab('pSet');return}const b=e.target.closest('[data-g]');if(b){if(b.dataset.g=='pIssue')goStep(1);tab(b.dataset.g)}};
+/* ---- register ---- */
+const regRows=q=>{const R=(LS('mp_reg')||[]).slice().reverse().filter(r=>!q||(r.id+' '+r.data.student.name+' '+r.data.student.roll).toLowerCase().includes(q.toLowerCase()));return R.length?`<div class="tw"><table><tr><th>Serial</th><th>Name</th><th>Roll</th><th>Programme</th><th>Rev</th><th>Issued</th><th>Status</th><th>Public</th><th></th></tr>${R.map(r=>`<tr><td>${esc(r.id)}</td><td>${esc(r.data.student.name)}</td><td>${esc(r.data.student.roll)}</td><td>${esc(r.tpl)} · ${esc(r.data.exam.semester)}</td><td>${r.rev}</td><td>${new Date(r.at).toLocaleDateString()}</td><td><span class="pill ${r.status}">${r.status}</span></td><td>${r.pub===r.fv?'✓ published':'⏳ pending'}</td><td><button data-r="view" data-id="${esc(r.id)}">View / Edit</button><button data-r="vf" data-id="${esc(r.id)}">Verify page</button><button data-r="cp" data-id="${esc(r.id)}">Link</button><button data-r="rv" data-id="${esc(r.id)}">${r.status=='valid'?'Revoke':'Restore'}</button><button data-r="del" data-id="${esc(r.id)}">Delete</button></td></tr>`).join('')}</table></div>`:'<p class="sub">No records found.</p>'};
+function regView(){const n=(LS('mp_reg')||[]).length;$('pReg').innerHTML=`<div class="pn"><div class="cd"><div class="row"><h3 style="margin:0">Issued register (${n})</h3><span class="sp"></span><button data-r="pub">Publish pending</button><button data-r="exp">Export backup</button><button data-r="imp">Import</button></div><input id="rq" placeholder="Search name / roll / serial" style="margin:10px 0"><div id="rtb">${regRows('')}</div><p class="sub">Revoke or re-issue takes effect for the public only after it is published (status "published").</p></div></div>`;$('rq').oninput=e=>$('rtb').innerHTML=regRows(e.target.value)}
+$('pReg').onclick=async e=>{const b=e.target.closest('[data-r]');if(!b)return;const a=b.dataset.r,R=LS('mp_reg')||[],r=R.find(x=>x.id==b.dataset.id);
+ if(a=='view'&&r){DATA=clone(r.data);DATA.qrLink=verifyBase()+frag(r);DATA.recId=r.id;DATA.rev=r.rev;norm();STEP=5;build();upd();tab('pIssue')}
+ else if(a=='vf'&&r)openVerify(frag(r));else if(a=='cp'&&r)tp('Verify link · '+r.id,verifyBase()+frag(r));
+ else if(a=='pub'){if(ghReady())publishUI();else tab('pSet')}
+ else if(a=='rv'&&r){r.status=r.status=='valid'?'revoked':'valid';r.fv++;r.file=await buildFile(r);WS('mp_reg',R);regView()}
+ else if(a=='del'&&r){if(r.pub){tp('Cannot delete a published record','The encrypted file is already public. Use Revoke instead. It marks the marksheet as cancelled for everyone.');return}if(b.dataset.sure){WS('mp_reg',R.filter(x=>x!==r));regView()}else{b.dataset.sure=1;b.textContent='Sure?';setTimeout(()=>{b.textContent='Delete';delete b.dataset.sure},3000)}}
+ else if(a=='exp')tp('Export register (backup, contains keys and student data: keep private)',JSON.stringify(R,null,1),'marksheet-register.json',null,()=>WS('mp_regbak',Date.now()));
+ else if(a=='imp')tp('Import register',' ','',t=>{const x=JSON.parse(t);if(!Array.isArray(x))throw new Error('An array is required');const cur=LS('mp_reg')||[];x.forEach(n=>{const i=cur.findIndex(c=>c.id==n.id);if(i>=0)cur[i]=n;else cur.push(n)});WS('mp_reg',cur);regView()})};
+/* ---- settings ---- */
+async function ghTest(){const g=ghInfo(),r=await fetch(`https://api.github.com/repos/${g.owner}/${g.repo}`,{headers:ghHead()}),j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j.permissions&&j.permissions.push?'✓ Connected to '+j.full_name+' (write access)':'Connected to '+j.full_name+' but this token has NO write access. Give it Contents: Read and write'}
+function setView(){const K=LS('mp_key'),R=LS('mp_reg')||[],g=ghInfo(),pend=pendingFiles().length,row=(a,b)=>`<div class="rr"><span>${a}</span><b>${esc(b||'—')}</b></div>`;
+ $('pSet').innerHTML=`<div class="pn"><div class="cd"><h3>1 · Site &amp; university (from config.js)</h3>${row('Site URL',CFG.siteUrl)}${row('QR / verify address',verifyBase())}${row('University',CU.name)}${row('Address',CU.address)}${row('Phone',CU.phone)}${row('Email',CU.email)}${row('Website',CU.website)}${row('Official portal',CU.officialPortal)}<p class="sub">To change these, edit <b>config.js</b> in your repo and upload it again.</p></div>
+ <div class="cd"><h3>2 · Publish records to the public site</h3><p class="sub">Each issued marksheet becomes an <b>encrypted file</b> in the <b>${esc(g.dir)}/</b> folder of your repo. Only the QR link holds the key. <b>${pend}</b> file(s) waiting.</p>
+ <div class="chk"><div class="it ${ghReady()?'ok':'wn'}"><div class="ic">1</div><div><b>Connect GitHub (one time)</b><span>Repo detected: <b>${esc(g.owner||'?')}/${esc(g.repo||'?')}</b> · branch ${esc(g.branch)}. Create a fine-grained token: only this repo, permission <b>Contents: Read and write</b>. It stays in this browser.</span><label style="margin-top:6px">GitHub token<input id="gh_t" type="password" placeholder="${LS('mp_gh')?'saved (hidden)':'github_pat_…'}"></label><div class="rbt" style="margin-top:6px"><button data-s="savetok">Save token</button><button data-s="testgh">Test connection</button><button data-s="rmtok">Remove token</button></div><small id="gh_m"></small></div></div>
+ <div class="it ${pend?'wn':'ok'}"><div class="ic">2</div><div><b>Publish</b><span>${pend?pend+' file(s) are not public yet.':'Everything is published.'}</span><div class="rbt" style="margin-top:6px"><button class="pri" data-s="pub">Publish now (GitHub)</button><button data-s="zip">Download ZIP (manual upload)</button><button data-s="markpub">I uploaded the ZIP: mark published</button></div></div></div>
+ <div class="it ok"><div class="ic">3</div><div><b>Wait and test</b><span>GitHub Pages updates in 1 to 2 minutes (cached copies up to ~10 min). Then open the verify page from the Register.</span></div></div></div></div>
+ <div class="cd"><h3>Preview verification page</h3><p class="sub">See the public page for every status, using the marksheet open in the Issue tab.</p><button data-s="pv">Open preview</button></div>
+ <div class="cd"><h3>3 · Signing key</h3><p class="sub">Key ID <b>${K?K.kid:'—'}</b> · private key lives only in this browser. Needed to update or revoke records. Back it up.</p><div class="row"><button data-s="kexp">Backup key</button><button data-s="kimp">Restore key</button></div></div>
+ <div class="cd"><h3>4 · Login</h3><p class="sub">Login is stored as a hash in config.js. Generate a new one and paste it.</p><label>New username<input id="s_nu" autocapitalize="none"></label><label>New password<input id="s_np" type="password"></label><div style="margin-top:8px"><button data-s="hash">Generate loginHash</button></div></div>
+ <div class="cd"><h3>5 · Data &amp; storage</h3>${storeBox()}<div class="row"><button data-s="rexp">Export register</button><button data-s="reset">Erase everything on this browser</button></div></div></div>`}
+$('pSet').onclick=async e=>{const b=e.target.closest('[data-s]');if(!b)return;const a=b.dataset.s,m=t=>{const x=$('gh_m');if(x)x.textContent=t};
+ if(a=='pv')openPreview('ok');
+ else if(a=='savetok'){const t=$('gh_t').value.trim();if(!t){m('Paste the token first');return}WS('mp_gh',t);setView()}
+ else if(a=='rmtok'){localStorage.removeItem('mp_gh');setView()}
+ else if(a=='testgh'){try{m('Testing…');m(await ghTest())}catch(x){m('✕ '+x.message)}}
+ else if(a=='pub'){if(ghReady())publishUI();else m('Save a GitHub token first, or use the ZIP download')}
+ else if(a=='zip')dlZip();
+ else if(a=='markpub'){const f=pendingFiles();f.forEach(x=>x.done());setView()}
+ else if(a=='kexp')tp('Signing key backup (PRIVATE, do not share)',JSON.stringify(LS('mp_key'),null,1),'marksheet-key-backup.json',null,()=>{WS('mp_backup',Date.now())});
+ else if(a=='kimp')tp('Restore signing key',' ','',t=>{const k=JSON.parse(t);if(!k.priv||!k.pub||!k.kid)throw new Error('Invalid key file');WS('mp_key',k);setView()});
+ else if(a=='hash'){const u=$('s_nu').value.trim().toLowerCase(),p=$('s_np').value;if(!u||p.length<6){b.textContent='Username + password (min 6) required';return}tp('Paste this line into config.js',`loginHash: "${await sha(u+':'+p)}",`)}
+ else if(a=='rexp')tp('Export register (backup, contains keys and student data: keep private)',JSON.stringify(LS('mp_reg')||[],null,1),'marksheet-register.json',null,()=>WS('mp_regbak',Date.now()));
+ else if(a=='reset'){if(b.dataset.sure){['mp_key','mp_reg','mp_seq','mp_work','mp_lock','mp_backup','mp_regbak','mp_gh','mp_keypub'].forEach(k=>localStorage.removeItem(k));sessionStorage.clear();location.reload()}else{b.dataset.sure=1;b.textContent='Press again: everything will be ERASED';setTimeout(()=>{b.textContent='Erase everything on this browser';delete b.dataset.sure},3500)}}};
+/* ---- storage info / help ---- */
+function storeInfo(){let ch=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('mp_')&&!k.startsWith('mp_pub_'))ch+=k.length+localStorage.getItem(k).length}}catch(e){}const R=LS('mp_reg')||[],last=LS('mp_regbak')||0;return{mb:(ch/1e6).toFixed(2),pct:ch/5e4,count:R.length,last,unbacked:R.filter(r=>r.at>last).length}}
+function storeBox(){const s=storeInfo();return `<div class="meter"><i style="width:${Math.min(100,s.pct)}%;background:${s.pct>80?'var(--er)':s.pct>60?'var(--wn)':'var(--ok)'}"></i></div><p class="sub">${s.mb} MB used of about 5 MB browser space · ${s.count} record(s) · last register backup: ${s.last?new Date(s.last).toLocaleString():'never'}${s.unbacked?' · <b>'+s.unbacked+' not backed up</b>':''}</p>`}
+function syncRec(){try{if(!DATA.recId||!DATA.qrLink)return;const R=LS('mp_reg')||[],r=R.find(x=>x.id==DATA.recId);if(r&&JSON.stringify(r.data)!==JSON.stringify(DATA)){r.data=clone(DATA);WS('mp_reg',R)}}catch(e){}}
+function helpView(){$('pHelp').innerHTML=`<div class="pn"><div class="cd"><h3>How verification works</h3><ol><li>You issue a marksheet. The portal makes a short summary, <b>signs</b> it with your private key and <b>encrypts</b> it with a random key.</li><li>The encrypted file is published to your repo (<b>data/&lt;id&gt;.json</b>). The QR holds only <b>verify.html#id=…&amp;k=…</b>, where k is the decryption key.</li><li>Someone scans the QR → <b>verify.html</b> fetches the file, decrypts it with k, checks your signature and shows the result.</li></ol><p class="sub">The repo is public, but the files are unreadable without the QR link, so student data is not exposed.</p></div>
+<div class="cd"><h3>Where is the data saved, and for how long?</h3><table><tr><th>What</th><th>Where</th><th>How long</th></tr><tr><td>Register (full marksheets, photos, keys)</td><td>This browser only (localStorage)</td><td>No expiry. Lost if browser data is cleared, or another browser / device / private window is used</td></tr><tr><td>Signing key</td><td>This browser only</td><td>Same. Keep a backup file</td></tr><tr><td>Public record (summary, encrypted)</td><td><b>data/</b> folder in the GitHub repo</td><td>Permanent until you change it</td></tr><tr><td>Decryption key of a record</td><td>Inside the printed QR + your register</td><td>Permanent</td></tr><tr><td>Public key</td><td>site-data.js in the repo</td><td>Permanent</td></tr><tr><td>University details, login hash</td><td>config.js in the repo</td><td>Until you edit it</td></tr></table></div>
+<div class="cd"><h3>Daily workflow</h3><ol><li>Sign in → Issue → Step 1 to Step 5, fix red items, read warnings, confirm and issue.</li><li>Print the marksheet.</li><li><b>Publish</b> (Settings, or the button after issuing). Without it the QR shows "No record found".</li><li>Open the verify page and scan the QR with a phone.</li><li>Export a backup of the register and key regularly.</li></ol></div>
+<div class="cd"><h3>Do not make these mistakes</h3><div class="chk"><div class="it er"><div class="ic">✕</div><div><b>Do not clear browser data or switch browser without a backup</b><span>The register, keys and the ability to update records live only here.</span></div></div><div class="it er"><div class="ic">✕</div><div><b>Do not share the register or key backups</b><span>They contain student data and the signing key.</span></div></div><div class="it wn"><div class="ic">!</div><div><b>Do not forget to publish</b><span>Issue, revoke and re-issue all need a publish to reach the public.</span></div></div><div class="it wn"><div class="ic">!</div><div><b>Do not print before checking warnings</b><span>Placeholder text and the SPECIMEN stamp are flagged in Review.</span></div></div><div class="it wn"><div class="ic">!</div><div><b>Do not change siteUrl after printing</b><span>Printed QR codes keep the old address.</span></div></div></div><button data-pv="1" style="margin-top:10px">Preview the verification page</button></div></div>`}
+$('pHelp').onclick=e=>{if(e.target.closest('[data-pv]'))openPreview('ok')};
+function openPreview(st){openVerify('#preview='+st)}
+build();try{render()}catch(e){console.error(e)}fit();bh();route();
+</script></body></html>
