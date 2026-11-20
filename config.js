@@ -11,7 +11,7 @@ window.PORTAL_CONFIG = {
 
   /* Optional: GitHub repo used for one-click publishing. Leave empty to
      auto-detect from siteUrl (works for username.github.io/repo). */
-  github: { owner: "", repo: "", branch: "main", dataDir: "data" },
+  github: { owner: "smartkali", repo: "mark-gen", branch: "main", dataDir: "data" },
 
   /* CHANGE 2: university details. Shown on the verification page and marksheet. */
   university: {
